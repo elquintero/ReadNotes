@@ -1333,6 +1333,33 @@ addEventListener("orientationchange", () => setTimeout(onResize, 120));
 if (window.visualViewport) window.visualViewport.addEventListener("resize", onResize);
 document.addEventListener("fullscreenchange", onResize);
 document.addEventListener("webkitfullscreenchange", onResize);
+/* ---------- botón Atrás del móvil / navegador ---------- */
+(function backButton() {
+  let armed = false;
+  const arm = () => { try { history.pushState({ rn: 1 }, ""); armed = true; } catch (e) {} };
+  try { history.replaceState({ rn: 0 }, ""); } catch (e) {}
+  // Chrome ignora entradas de historial creadas sin interacción: se crea al primer toque o tecla
+  const first = () => {
+    removeEventListener("pointerup", first, true);
+    removeEventListener("keydown", first, true);
+    if (!armed) arm();
+  };
+  addEventListener("pointerup", first, true);
+  addEventListener("keydown", first, true);
+  addEventListener("popstate", () => {
+    if (!armed) return;
+    if (settingsOpen || scene !== "menu") {
+      // mismo efecto que la flecha de la barra superior
+      if (settingsOpen) setSettings(false); else act("back");
+      arm();
+      return;
+    }
+    // menú principal: dejar que el sistema cierre la app
+    armed = false;
+    history.back();
+    setTimeout(() => { if (document.visibilityState === "visible") arm(); }, 400);
+  });
+})();
 function start() {
 loadSettings();
 loadSessions();
