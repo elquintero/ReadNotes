@@ -4,7 +4,7 @@
   "description": "Entrena la lectura de notas en el pentagrama",
   "start_url": "./",
   "scope": "./",
-  "id": "/insreadnotes/",
+  "id": "/ReadNotes/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#141721",
