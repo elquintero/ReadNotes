@@ -46,7 +46,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.0", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.0.12", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -73,6 +73,7 @@ vol: 7,
 haptic: true,
 midi: false,
 skin: 0,
+adapt: true,
 rec: 0
 };
 function loadSettings() {
@@ -88,6 +89,7 @@ S.vol    = clamp(int(raw.vol, 7), 0, 10);
 S.haptic = raw.haptic !== false;
   S.skin = raw.skin === 1 ? 1 : 0;
 S.midi = raw.midi === true;
+S.adapt = raw.adapt !== false;
 S.rec    = Math.max(0, int(raw.rec, 0));
 } catch (e) {  }
 }
@@ -114,7 +116,7 @@ const first = S.skin === 1 ? 9.4 : 5.3;
 const gap = S.skin === 1 ? 3.3 : (n <= 4 ? 3.4 : 3.0);
 return { first, gap, fit: first + (n - 1) * gap + (S.skin === 1 ? 4 : 2.3) };
 }
-const extraLines = () => (S.mode === 0 ? S.lg : S.mode === 1 ? S.lf : Math.max(S.lg, S.lf));
+const extraLines = () => (playMode === 0 ? S.lg : playMode === 1 ? S.lf : Math.max(S.lg, S.lf));
 function extents() {
 return {
 up:   Math.max(4.5 + extraLines(), 4.9) + 1.0,
@@ -238,20 +240,80 @@ let sum = null, SD = null, sessions = [];
 const ST = { clef: -1, period: 0, metric: 0, confirm: 0 };
 let flashIdx = -1, flashT = 0, flashOk = true;
 let msg = "", msgT = 0, msgOk = true;
+/* ---------- práctica adaptativa y repaso de fallos ---------- */
+const WEAK_W = 1.8;
+let playMode = 0, reviewOn = false, reviewClefs = [0, 1], reviewPool = [], wmap = new Map();
+const clefsOf = (m) => (m === 2 ? [0, 1] : [m]);
+// Peso de cada nota según tus últimas 40 sesiones (las recientes cuentan más).
+// 1 = normal; más fallos y más tiempo para acertar => más peso (máx. 6).
+function noteWeights() {
+  const m = new Map(), tot = [{ n: 0, ms: 0 }, { n: 0, ms: 0 }], rec = sessions.slice(-40);
+  for (let i = rec.length - 1, age = 0; i >= 0; i--, age++) {
+    const d = Math.pow(0.93, age);
+    for (const e of rec[i].n) {
+      if (!Array.isArray(e) || (e[0] !== 0 && e[0] !== 1)) continue;
+      const k = e[0] + "_" + e[1], ms = Math.min(+e[3] || 0, 15000);
+      let a = m.get(k);
+      if (!a) { a = { clef: e[0], step: e[1], n: 0, bad: 0, ms: 0 }; m.set(k, a); }
+      a.n += d;  a.bad += d * (+e[2] || 0);  a.ms += d * ms;
+      tot[e[0]].n += d;  tot[e[0]].ms += d * ms;
+    }
+  }
+  const out = new Map();
+  for (const a of m.values()) {
+    const T = tot[a.clef], ref = T.n ? T.ms / T.n : 0;
+    const err = (a.bad + 0.1) / (a.n + a.bad + 2);
+    const slow = ref > 0 && a.n >= 1.5 ? clamp(a.ms / a.n / ref - 1, 0, 2) : 0;
+    out.set(a.clef + "_" + a.step, { w: Math.min(6, 1 + 6 * err + 1.5 * slow) });
+  }
+  return out;
+}
+// Notas débiles de las claves indicadas. Con 1-3 notas débiles se completa hasta 4 para no repetir sin fin.
+function reviewInfo(clefs) {
+  const wm = noteWeights(), all = [];
+  for (const c of clefs) for (let s = lowStep(c); s <= highStep(c); s++) {
+    const a = wm.get(c + "_" + s);
+    all.push({ clef: c, step: s, w: a ? a.w : 1.5, seen: !!a, j: Math.random() });
+  }
+  all.sort((a, b) => b.w - a.w || a.j - b.j);
+  const weak = all.filter((a) => a.seen && a.w >= WEAK_W).slice(0, 10);
+  return { pool: weak.length ? (weak.length < 4 ? all.slice(0, 4) : weak) : [], nWeak: weak.length };
+}
+function pickStep(clef) {
+  let cand = [];
+  if (reviewOn) cand = reviewPool.filter((p) => p.clef === clef).map((p) => ({ s: p.step, w: p.w }));
+  if (!cand.length) {
+    const uni = !S.adapt || Math.random() < 0.2;   // 20% al azar puro para no perder cobertura
+    for (let s = lowStep(clef); s <= highStep(clef); s++) {
+      const a = wmap.get(clef + "_" + s);
+      cand.push({ s, w: uni ? 1 : (a ? a.w : 1.5) });
+    }
+  }
+  let pool = cand.filter((c) => clef * 1000 + c.s !== lastKey);
+  if (!pool.length) pool = cand;
+  let r = Math.random() * pool.reduce((x, c) => x + c.w, 0);
+  for (const c of pool) { r -= c.w; if (r <= 0) return c.s; }
+  return pool[pool.length - 1].s;
+}
 function makeNote(prev) {
-  const clef = plan[generated++];
-  let s, key;
-  do { s = rand(lowStep(clef), highStep(clef)); key = clef * 1000 + s; } while (key === lastKey);
-  lastKey = key;
+  const clef = plan[generated++], s = pickStep(clef);
+  lastKey = clef * 1000 + s;
   const extra = prev && prev.clef !== clef ? CLEF_GAP : 0;
   const t = prev ? prev.tslot + 1 + extra : 0;
   return { step: s, clef, extra, slot: t, tslot: t, state: 0, shake: 0 };
 }
-function startSession() {
-  const mode = S.mode;
+// startSession(false) = normal · startSession(true, claves) = repaso · startSession() = repetir el modo actual
+function startSession(review, clefs) {
+  if (review === true) { reviewOn = true; reviewClefs = clefs && clefs.length ? clefs : [0, 1]; }
+  else if (review === false) reviewOn = false;
+  wmap = noteWeights();
+  reviewPool = reviewOn ? reviewInfo(reviewClefs).pool : [];
+  if (reviewOn && !reviewPool.length) reviewOn = false;
+  if (reviewOn) { const pc = [0, 1].filter((c) => reviewPool.some((p) => p.clef === c)); playMode = pc.length === 2 ? 2 : pc[0]; }
+  else playMode = S.mode;
   layout();
   plan = [];
-  if (mode === 2) {
+  if (playMode === 2) {
     let c = rand(0, 1);
     while (plan.length < SESSION_N) {
       const run = rand(2, 5);
@@ -259,7 +321,7 @@ function startSession() {
       c = 1 - c;
     }
   } else {
-    for (let i = 0; i < SESSION_N; i++) plan.push(mode);
+    for (let i = 0; i < SESSION_N; i++) plan.push(playMode);
   }
   generated = 0; notes = []; lastKey = -999;
   score = streak = okCount = badCount = bestStreak = 0;
@@ -270,6 +332,7 @@ function startSession() {
   curShownAt = performance.now();
   pauseStart = settingsOpen ? curShownAt : null;
   go("game");
+  if (reviewOn) { msg = "Repaso: " + reviewPool.length + " notas a reforzar"; msgOk = true; msgT = 3; }
 }
 const restartIfGame = () => { if (scene === "game") startSession(); };
 function pauseBegin() { if (pauseStart === null) pauseStart = performance.now(); }
@@ -285,6 +348,7 @@ function setSettings(v) {
   drag = null;  sceneHits = [];
   if (scene === "game") { if (v) pauseBegin(); else pauseEnd(); }
   dirty = true;
+  syncHist();
 }
 function loadSessions() {
   try {
@@ -317,15 +381,16 @@ function reviewList(list) {
 }
 function finishSession() {
   if (scene !== "game") return;
-  const rec = { t: Date.now(), m: S.mode, s: score, r: bestStreak, n: results.slice() };
+  const rec = { t: Date.now(), m: playMode, s: score, r: bestStreak, n: results.slice() };
+  if (reviewOn) rec.rv = 1;
   let prev = null;
-  for (let i = sessions.length - 1; i >= 0; i--) if (sessions[i].m === rec.m) { prev = sessions[i]; break; }
+  for (let i = sessions.length - 1; i >= 0; i--) if (sessions[i].m === rec.m && !!sessions[i].rv === !!rec.rv) { prev = sessions[i]; break; }
   sessions.push(rec);
   saveSessions();
   sum = {
     rec, all: aggOf(rec.n), prevAgg: prev ? aggOf(prev.n) : null,
     byClef: [aggOf(rec.n.filter((e) => e[0] === 0)), aggOf(rec.n.filter((e) => e[0] === 1))],
-    review: reviewList(rec.n)
+    review: reviewList(rec.n), rvN: reviewInfo(clefsOf(rec.m)).nWeak
   };
   playStreak();
   buzz([25, 40, 25]);
@@ -375,7 +440,7 @@ const a = mod(Math.atan2(vy, vx) + Math.PI / 2 + seg / 2, Math.PI * 2);
 return Math.floor(a / seg) % 7;
 }
 function act(id) {
-  if (id.startsWith("mode_")) { S.mode = clamp(int(id.slice(5), 0), 0, 2); saveSettings(); startSession(); return; }
+  if (id.startsWith("mode_")) { S.mode = clamp(int(id.slice(5), 0), 0, 2); saveSettings(); startSession(false); return; }
   if (id.startsWith("tf_")) { ST.clef = int(id.slice(3), -1); computeStats(); dirty = true; return; }
   if (id.startsWith("ln_")) { const p = id.split("_"), n = clamp(int(p[2], 0), 0, 4); if (p[1] === "1") S.lf = n; else S.lg = n; saveSettings(); layout(); dirty = true; return; }
   if (id.startsWith("tp_")) { ST.period = int(id.slice(3), 0); computeStats(); dirty = true; return; }
@@ -385,6 +450,11 @@ function act(id) {
     case "back": if (scene === "game" || scene === "summary") go("clefs"); else go("menu"); return;
     case "g_menu": case "s_menu": go("menu"); return;
     case "reset": if (scene === "game") startSession(); return;
+    case "s_review": if (sum) startSession(true, clefsOf(sum.rec.m)); return;
+    case "t_review": if (SD) startSession(true, SD.clefs); return;
+    case "update": applyUpdate(); return;
+    case "upd_x": updDismissed = true; dirty = true; return;
+    case "install": return;   // se lanza en el evento click (gesto del usuario)
     case "s_again": go("clefs"); return;
     case "t_chart": ST.metric = (ST.metric + 1) % 3; dirty = true; return;
     case "t_clear":
@@ -407,6 +477,8 @@ function act(id) {
     case "vol_+": S.vol = Math.min(10, S.vol + 1); playNote(5, 0.4); break;
     case "hap_on":  S.haptic = true;  buzz(20); break;
     case "hap_off": S.haptic = false; break;
+    case "adapt_on":  S.adapt = true;  break;
+    case "adapt_off": S.adapt = false; break;
   }
   saveSettings();
   dirty = true;
@@ -450,11 +522,15 @@ const rows = [
 { k: "sw", label: "Vibraciones", value: S.haptic ? "Habilitado" : "Deshabilitado", on: S.haptic, id: S.haptic ? "hap_off" : "hap_on" }
 ];
 if (navigator.requestMIDIAccess) rows.push({ k: "sw", label: "Teclado MIDI", value: S.midi ? "Habilitado" : "Deshabilitado", on: S.midi, id: S.midi ? "midi_off" : "midi_on" });
+rows.push({ k: "sw", label: "Práctica adaptativa", value: S.adapt ? "Más práctica en tus notas débiles" : "Notas totalmente al azar", on: S.adapt, id: S.adapt ? "adapt_off" : "adapt_on" });
 rows.push({ k: "hd", label: "Apariencia" });
 rows.push({ k: "tap", label: "Tema de la aplicación", value: S.skin === 1 ? "Oscuro" : "Clásico", id: S.skin === 1 ? "skin_0" : "skin_1" });
 rows.push({ k: "step", label: "Notas visibles", value: String(S.visible), minus: "vis_-", plus: "vis_+" });
 if (fsSupported()) rows.push({ k: "sw", label: "Pantalla completa", value: isFs() ? "Activada" : "Desactivada", on: isFs(), id: isFs() ? "fs_off" : "fs_on" });
 else rows.push({ k: "note", label: "iPhone: Compartir › Añadir a pantalla de inicio" });
+if (deferredInstall || updReady) rows.push({ k: "hd", label: "Aplicación" });
+if (deferredInstall) rows.push({ k: "tap", label: "Instalar app", value: "Añádela a tu pantalla de inicio o escritorio", id: "install" });
+if (updReady) rows.push({ k: "tap", label: "Nueva versión disponible", value: "Toca para actualizar ahora", id: "update" });
 return rows;
 }
 // los botones salen de lo que se dibuja (cada pantalla los registra con addHit)
@@ -466,6 +542,7 @@ return { x: e.clientX - r.left, y: e.clientY - r.top };
 cv.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   audio();
+  lastMoved = false;
   pointer = toLocal(e);
   buildUI();
   let hb = null;
@@ -501,7 +578,7 @@ cv.addEventListener("pointermove", (e) => {
 });
 cv.addEventListener("pointerup", (e) => {
   if (drag) {
-    const d = drag;  drag = null;
+    const d = drag;  drag = null;  lastMoved = d.moved;
     if (!d.moved) { if (d.id) act(d.id); }
     else scrollV = performance.now() - d.lt > 90 ? 0 : d.v;
   }
@@ -518,10 +595,12 @@ cv.addEventListener("wheel", (e) => {
   dirty = true;
 }, { passive: false });
 cv.addEventListener("click", (e) => {
+if (lastMoved) return;
 const p = toLocal(e);
 for (const b of buttons) {
 if (!hit(b, p)) continue;
 const el = document.documentElement;
+if (b.id === "install") { doInstall(); break; }
 if (b.id === "fs_on") {
 const req = el.requestFullscreen || el.webkitRequestFullscreen;
 try { const r = req.call(el); if (r && r.catch) r.catch(() => {}); } catch (_) {}
@@ -551,6 +630,89 @@ document.addEventListener("visibilitychange", () => {
   if (scene !== "game") return;
   if (document.hidden) pauseBegin(); else if (!settingsOpen) pauseEnd();
 });
+/* ===================== PWA: instalar · actualizar · pantalla encendida · botón atrás ===================== */
+let deferredInstall = null, updReady = false, updDismissed = false, updWaiting = null, wantReload = false;
+let histPushed = false, wakeLock = null, wakeBusy = false, lastMoved = false;
+// Instalar (Chrome/Edge): se guarda el evento y se lanza desde Ajustes
+addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; dirty = true; });
+addEventListener("appinstalled", () => { deferredInstall = null; dirty = true; });
+function doInstall() {
+  const p = deferredInstall;
+  if (!p) return;
+  deferredInstall = null;  dirty = true;
+  try { p.prompt(); } catch (e) {}
+}
+// Nueva versión: se detecta con el service worker y se avisa (nunca recarga sola)
+function applyUpdate() {
+  wantReload = true;
+  if (updWaiting) {
+    try { updWaiting.postMessage({ type: "SKIP_WAITING" }); } catch (e) {}
+    setTimeout(() => location.reload(), 2000);
+  } else location.reload();
+}
+function setupSW() {
+  if (!("serviceWorker" in navigator) || !(location.protocol === "https:" || location.hostname === "localhost")) return;
+  const had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (wantReload) location.reload();
+    else if (had) { updReady = true; dirty = true; }   // sw.js que hace skipWaiting() por su cuenta
+  });
+  navigator.serviceWorker.register("sw.js").then((reg) => {
+    const watch = (sw) => sw.addEventListener("statechange", () => {
+      if (sw.state === "installed" && navigator.serviceWorker.controller) { updWaiting = sw; updReady = true; dirty = true; }
+    });
+    if (reg.waiting && navigator.serviceWorker.controller) { updWaiting = reg.waiting; updReady = true; dirty = true; }
+    reg.addEventListener("updatefound", () => { if (reg.installing) watch(reg.installing); });
+    const check = () => { try { reg.update().catch(() => {}); } catch (e) {} };
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+    setInterval(check, 3600000);
+  }).catch(() => {});
+}
+addEventListener("load", setupSW);
+function drawUpdateBanner() {
+  if (!updReady || updDismissed || scene === "game" || settingsOpen) return;
+  const w = Math.min(L.cw - L.m * 2, 560), x = L.cx0 + (L.cw - w) / 2;
+  const h = clamp(L.vh * 0.07, 44, 54), y = L.top + L.barH + L.m;
+  const cw2 = h * 0.8, bw = clamp(w * 0.3, 92, 130), bx = x + w - cw2 - bw - 2, by = y + 7, bh = h - 14;
+  ctx.save();  ctx.shadowColor = "rgba(0,0,0,.55)";  ctx.shadowBlur = 14;
+  ctx.fillStyle = "#1d3b46";  rr(x, y, w, h, 12);  ctx.fill();  ctx.restore();
+  ctx.strokeStyle = AC.cyan;  ctx.lineWidth = 1.2;  rr(x, y, w, h, 12);  ctx.stroke();
+  text("Nueva versión disponible", x + 14, y + h / 2, clamp(h * 0.3, 13, 16), "#e6f4f7", "left", "", bx - x - 22);
+  actionBtn(bx, by, bw, bh, "Actualizar", true, hoverBtn === "update");
+  const cx = x + w - cw2 / 2 - 2, cy = y + h / 2, r = 5;
+  line(cx - r, cy - r, cx + r, cy + r, "#a9c9d1", 2);  line(cx - r, cy + r, cx + r, cy - r, "#a9c9d1", 2);
+  const H = (id, hx, hy, hw, hh) => ({ id, x: hx, y: hy, w: hw, h: hh, hidden: true, text: "", active: false });
+  sceneHits.unshift(H("update", bx, by, bw, bh), H("upd_x", x + w - cw2 - 2, y, cw2 + 2, h), H("noop", x, y, w, h));
+}
+// Pantalla encendida mientras dura la partida (Wake Lock)
+async function wakeOn() {
+  if (!("wakeLock" in navigator) || wakeLock || wakeBusy || document.hidden || scene !== "game") return;
+  wakeBusy = true;
+  try {
+    const l = await navigator.wakeLock.request("screen");
+    if (scene === "game") { wakeLock = l; l.addEventListener("release", () => { if (wakeLock === l) wakeLock = null; }); }
+    else l.release();
+  } catch (e) {}
+  wakeBusy = false;
+}
+function wakeOff() { const l = wakeLock; wakeLock = null; if (l) { try { l.release(); } catch (e) {} } }
+const wakeSync = () => (scene === "game" ? wakeOn() : wakeOff());
+document.addEventListener("visibilitychange", () => { if (!document.hidden) wakeSync(); });   // el sistema lo libera al ocultar la app
+// Botón/gesto "atrás" del móvil: una entrada de historial mientras estás fuera del menú
+const needsEntry = () => scene !== "menu" || settingsOpen;
+function syncHist() {
+  if (histPushed || !needsEntry()) return;
+  try { history.pushState({ rn: 1 }, ""); histPushed = true; } catch (e) {}
+}
+addEventListener("popstate", () => {
+  if (!histPushed) return;
+  histPushed = false;
+  if (settingsOpen) setSettings(false);
+  else if (scene !== "menu") act("back");
+  else { try { history.back(); } catch (e) {} return; }   // ya en el menú: salir
+  syncHist();
+});
+
 let midiAccess = null;
 const seenMidi = new Set();
 function onMidi(e) {
@@ -869,6 +1031,7 @@ function addHit(id, x, y, w, h) { sceneHits.push({ id, x, y, w, h, hidden: true,
 function go(s) {
   scene = s;  sceneHits = [];  scrollY = 0;  scrollV = 0;  maxScroll = 0;  drag = null;  finishAt = 0;
   dirty = true;
+  syncHist();  wakeSync();
 }
 const darkUI = () => S.skin === 1 || scene !== "game";
 const noteLabel = (step) => nameOf(mod(step, 7)) + (4 + Math.floor(step / 7));
@@ -909,7 +1072,7 @@ function computeStats() {
     if (used) ns++;
   }
   const days = [...dm.values()].sort((a, b) => a.t - b.t).map((d) => ({ t: d.t, a: [aggOf(d.arr[0]), aggOf(d.arr[1])] }));
-  SD = { clefs, days, all: aggOf(all), notes: [...nm.values()], sessions: ns };
+  SD = { clefs, days, all: aggOf(all), notes: [...nm.values()], sessions: ns, rvN: reviewInfo(clefs).nWeak };
 }
 
 /* ---------- utilidades de dibujo ---------- */
@@ -1100,7 +1263,7 @@ function drawSummary() {
   clipRect(0, L.top + L.barH, L.vw, viewBot - L.top - L.barH);
   let y = L.top + L.barH + pad - scrollY;
   y += 6;
-  text(MODE_NAME[r.m] + " · " + SESSION_N + " notas", cx, y, fs, AC.dim, "center");
+  text((r.rv ? "Repaso de fallos" : MODE_NAME[r.m]) + " · " + SESSION_N + " notas", cx, y, fs, AC.dim, "center");
   y += fs * 1.2 + pad;
   // anillo de precisión
   const R = clamp(w * 0.19, 54, 88), lw = R * 0.2, ry = y + R + lw / 2;
@@ -1159,6 +1322,12 @@ function drawSummary() {
     text(info, x + w - 14, ry2, fs, a.bad > 0 ? AC.bad : AC.dim, "right", "", w * 0.55);
   });
   y += rrh * Math.max(1, rv.items.length) + 10 + pad;
+  if (sum.rvN > 0) {
+    const rbh = clamp(L.vh * 0.065, 44, 54);
+    actionBtn(x, y, w, rbh, "Repasar mis fallos", false, hoverBtn === "s_review");
+    addHit("s_review", x, y, w, rbh);
+    y += rbh + pad;
+  }
   maxScroll = Math.max(0, y + scrollY - viewBot);
   if (scrollY > maxScroll) { scrollY = maxScroll;  dirty = true; }
   ctx.restore();
@@ -1245,6 +1414,12 @@ function drawStats() {
     ];
     cards.forEach((c, i) => statCard(x + (i % 2) * (cw + gap), y + Math.floor(i / 2) * (ch + gap), cw, ch, c[0], c[1], "", AC.dim, c[2]));
     y += 3 * ch + 2 * gap + pad * 1.4;
+    if (SD.rvN > 0) {
+      const rbh = clamp(w * 0.12, 44, 54);
+      actionBtn(x, y, w, rbh, "Repasar mis fallos · " + SD.rvN + (SD.rvN === 1 ? " nota" : " notas"), true, hoverBtn === "t_review");
+      addHit("t_review", x, y, w, rbh);
+      y += rbh + pad * 1.4;
+    }
     // gráfico
     const names = ["PRECISIÓN", "NOTAS POR SEGUNDO", "NOTAS PRACTICADAS"];
     text(names[ST.metric], x + w / 2, y, clamp(fs, 12, 15), AC.txt, "center", "bold");
@@ -1299,7 +1474,7 @@ sceneHits = [];
 if (settingsOpen) { drawSettings(); return; }
 if (scene === "game") {
 ctx.fillStyle = S.skin === 1 ? "#212121" : C.bg;  ctx.fillRect(0, 0, L.vw, L.vh);
-drawBar(MODE_NAME[S.mode], { back: "back", actions: [{ id: "reset", icon: "reset" }, { id: "open", icon: "gear" }] });
+drawBar(reviewOn ? "Repasar fallos" : MODE_NAME[playMode], { back: "back", actions: [{ id: "reset", icon: "reset" }, { id: "open", icon: "gear" }] });
 if (S.skin === 1) drawHeaderDark(); else { drawHeader(); drawPaper(); }
 drawStaff();
 drawNotes();
@@ -1311,6 +1486,7 @@ if (scene === "menu") drawMenu(t);
 else if (scene === "clefs") drawClefs();
 else if (scene === "summary") drawSummary();
 else if (scene === "stats") drawStats();
+drawUpdateBanner();
 }
 }
 let last = performance.now();
@@ -1333,33 +1509,6 @@ addEventListener("orientationchange", () => setTimeout(onResize, 120));
 if (window.visualViewport) window.visualViewport.addEventListener("resize", onResize);
 document.addEventListener("fullscreenchange", onResize);
 document.addEventListener("webkitfullscreenchange", onResize);
-/* ---------- botón Atrás del móvil / navegador ---------- */
-(function backButton() {
-  let armed = false;
-  const arm = () => { try { history.pushState({ rn: 1 }, ""); armed = true; } catch (e) {} };
-  try { history.replaceState({ rn: 0 }, ""); } catch (e) {}
-  // Chrome ignora entradas de historial creadas sin interacción: se crea al primer toque o tecla
-  const first = () => {
-    removeEventListener("pointerup", first, true);
-    removeEventListener("keydown", first, true);
-    if (!armed) arm();
-  };
-  addEventListener("pointerup", first, true);
-  addEventListener("keydown", first, true);
-  addEventListener("popstate", () => {
-    if (!armed) return;
-    if (settingsOpen || scene !== "menu") {
-      // mismo efecto que la flecha de la barra superior
-      if (settingsOpen) setSettings(false); else act("back");
-      arm();
-      return;
-    }
-    // menú principal: dejar que el sistema cierre la app
-    armed = false;
-    history.back();
-    setTimeout(() => { if (document.visibilityState === "visible") arm(); }, 400);
-  });
-})();
 function start() {
 loadSettings();
 loadSessions();
@@ -1379,10 +1528,5 @@ document.fonts.load("40px Bravura", "\uE050\uE062\uE1D5\uE1D6").then(start, star
   src: url(data:font/otf;base64,T1RUTwALAIAAAwAwQ0ZGIJnOpA8AAADEAAAU/EdQT1NEdkx1AAA6SAAAACBHU1VCRHZMdQAAOmgAAAAgT1MvMk7fTX8AABYwAAAAYGNtYXDgd8KQAAA55AAAAERoZWFkM7+N7QAAFcAAAAA2aGhlYQ88BTMAABYMAAAAJGhtdHgIDv/7AAAV+AAAABJtYXhwAAVQAAAAALwAAAAGbmFtZcg0NR8AABaQAAAjUnBvc3T/uAAyAAA6KAAAACAAAFAAAAUAAAEABAIAAQEBCEJyYXZ1cmEAAQEBMPgfAPggAfghDAD4IgL4IgP4IwRADAP8Rhz4OBwJDxwHnwUcEiEPkRwU9hIcEiURAAkCAAEACAAPABYAHQAiAJURuBG/EcV1bmlFMDUwdW5pRTA2MnVuaUUxRDV1bmlFMUQ2MS40ODJCcmF2dXJhIGlzIGEgcmVnaXN0ZXJlZCB0cmFkZW1hcmsgb2YgU3RlaW5iZXJnIE1lZGlhIFRlY2hub2xvZ2llcyBHbWJIIGluIHRoZSBFdXJvcGVhbiBVbmlvbiBhbmQgb3RoZXIgdGVycml0b3JpZXMuQ29weXJpZ2h0IENvcHlyaWdodCAyMDI2LCBTdGVpbmJlcmcgTWVkaWEgVGVjaG5vbG9naWVzIEdtYkggaHR0cDp3d3cuc3RlaW5iZXJnLm5ldCwgd2l0aCBSZXNlcnZlZCBGb250IE5hbWUgIkJyYXZ1cmEiLgoKVGhpcyBGb250IFNvZnR3YXJlIGlzIGxpY2Vuc2VkIHVuZGVyIHRoZSBTSUwgT3BlbiBGb250IExpY2Vuc2UsIFZlcnNpb24gMS4xLiBUaGlzIGxpY2Vuc2UgaXMgY29waWVkIGJlbG93LCBhbmQgaXMgYWxzbyBhdmFpbGFibGUgd2l0aCBhIEZBUSBhdDogaHR0cDpzY3JpcHRzLnNpbC5vcmdPRkwKCi0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tClNJTCBPUEVOIEZPTlQgTElDRU5TRSBWZXJzaW9uIDEuMSAtIDI2IEZlYnJ1YXJ5IDIwMDcKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KClBSRUFNQkxFClRoZSBnb2FscyBvZiB0aGUgT3BlbiBGb250IExpY2Vuc2UgT0ZMIGFyZSB0byBzdGltdWxhdGUgd29ybGR3aWRlIGRldmVsb3BtZW50IG9mIGNvbGxhYm9yYXRpdmUgZm9udCBwcm9qZWN0cywgdG8gc3VwcG9ydCB0aGUgZm9udCBjcmVhdGlvbiBlZmZvcnRzIG9mIGFjYWRlbWljIGFuZCBsaW5ndWlzdGljIGNvbW11bml0aWVzLCBhbmQgdG8gcHJvdmlkZSBhIGZyZWUgYW5kIG9wZW4gZnJhbWV3b3JrIGluIHdoaWNoIGZvbnRzIG1heSBiZSBzaGFyZWQgYW5kIGltcHJvdmVkIGluIHBhcnRuZXJzaGlwIHdpdGggb3RoZXJzLgoKVGhlIE9GTCBhbGxvd3MgdGhlIGxpY2Vuc2VkIGZvbnRzIHRvIGJlIHVzZWQsIHN0dWRpZWQsIG1vZGlmaWVkIGFuZCByZWRpc3RyaWJ1dGVkIGZyZWVseSBhcyBsb25nIGFzIHRoZXkgYXJlIG5vdCBzb2xkIGJ5IHRoZW1zZWx2ZXMuIFRoZSBmb250cywgaW5jbHVkaW5nIGFueSBkZXJpdmF0aXZlIHdvcmtzLCBjYW4gYmUgYnVuZGxlZCwgZW1iZWRkZWQsIHJlZGlzdHJpYnV0ZWQgYW5kb3Igc29sZCB3aXRoIGFueSBzb2Z0d2FyZSBwcm92aWRlZCB0aGF0IGFueSByZXNlcnZlZCBuYW1lcyBhcmUgbm90IHVzZWQgYnkgZGVyaXZhdGl2ZSB3b3Jrcy4gVGhlIGZvbnRzIGFuZCBkZXJpdmF0aXZlcywgaG93ZXZlciwgY2Fubm90IGJlIHJlbGVhc2VkIHVuZGVyIGFueSBvdGhlciB0eXBlIG9mIGxpY2Vuc2UuIFRoZSByZXF1aXJlbWVudCBmb3IgZm9udHMgdG8gcmVtYWluIHVuZGVyIHRoaXMgbGljZW5zZSBkb2VzIG5vdCBhcHBseSB0byBhbnkgZG9jdW1lbnQgY3JlYXRlZCB1c2luZyB0aGUgZm9udHMgb3IgdGhlaXIgZGVyaXZhdGl2ZXMuCgpERUZJTklUSU9OUwoiRm9udCBTb2Z0d2FyZSIgcmVmZXJzIHRvIHRoZSBzZXQgb2YgZmlsZXMgcmVsZWFzZWQgYnkgdGhlIENvcHlyaWdodCBIb2xkZXJzIHVuZGVyIHRoaXMgbGljZW5zZSBhbmQgY2xlYXJseSBtYXJrZWQgYXMgc3VjaC4gVGhpcyBtYXkKaW5jbHVkZSBzb3VyY2UgZmlsZXMsIGJ1aWxkIHNjcmlwdHMgYW5kIGRvY3VtZW50YXRpb24uCgoiUmVzZXJ2ZWQgRm9udCBOYW1lIiByZWZlcnMgdG8gYW55IG5hbWVzIHNwZWNpZmllZCBhcyBzdWNoIGFmdGVyIHRoZSBjb3B5cmlnaHQgc3RhdGVtZW50cy4KCiJPcmlnaW5hbCBWZXJzaW9uIiByZWZlcnMgdG8gdGhlIGNvbGxlY3Rpb24gb2YgRm9udCBTb2Z0d2FyZSBjb21wb25lbnRzIGFzIGRpc3RyaWJ1dGVkIGJ5IHRoZSBDb3B5cmlnaHQgSG9sZGVycy4KCiJNb2RpZmllZCBWZXJzaW9uIiByZWZlcnMgdG8gYW55IGRlcml2YXRpdmUgbWFkZSBieSBhZGRpbmcgdG8sIGRlbGV0aW5nLCBvciBzdWJzdGl0dXRpbmcgLS0gaW4gcGFydCBvciBpbiB3aG9sZSAtLSBhbnkgb2YgdGhlIGNvbXBvbmVudHMgb2YgdGhlIE9yaWdpbmFsIFZlcnNpb24sIGJ5IGNoYW5naW5nIGZvcm1hdHMgb3IgYnkgcG9ydGluZyB0aGUgRm9udCBTb2Z0d2FyZSB0byBhIG5ldyBlbnZpcm9ubWVudC4KCiJBdXRob3IiIHJlZmVycyB0byBhbnkgZGVzaWduZXIsIGVuZ2luZWVyLCBwcm9ncmFtbWVyLCB0ZWNobmljYWwgd3JpdGVyIG9yIG90aGVyIHBlcnNvbiB3aG8gY29udHJpYnV0ZWQgdG8gdGhlIEZvbnQgU29mdHdhcmUuCgpQRVJNSVNTSU9OICYgQ09ORElUSU9OUwpQZXJtaXNzaW9uIGlzIGhlcmVieSBncmFudGVkLCBmcmVlIG9mIGNoYXJnZSwgdG8gYW55IHBlcnNvbiBvYnRhaW5pbmcgYSBjb3B5IG9mIHRoZSBGb250IFNvZnR3YXJlLCB0byB1c2UsIHN0dWR5LCBjb3B5LCBtZXJnZSwgZW1iZWQsIG1vZGlmeSwgcmVkaXN0cmlidXRlLCBhbmQgc2VsbCBtb2RpZmllZCBhbmQgdW5tb2RpZmllZCBjb3BpZXMgb2YgdGhlIEZvbnQgU29mdHdhcmUsIHN1YmplY3QgdG8gdGhlIGZvbGxvd2luZyBjb25kaXRpb25zOgoKMSBOZWl0aGVyIHRoZSBGb250IFNvZnR3YXJlIG5vciBhbnkgb2YgaXRzIGluZGl2aWR1YWwgY29tcG9uZW50cywgaW4gT3JpZ2luYWwgb3IgTW9kaWZpZWQgVmVyc2lvbnMsIG1heSBiZSBzb2xkIGJ5IGl0c2VsZi4KCjIgT3JpZ2luYWwgb3IgTW9kaWZpZWQgVmVyc2lvbnMgb2YgdGhlIEZvbnQgU29mdHdhcmUgbWF5IGJlIGJ1bmRsZWQsIHJlZGlzdHJpYnV0ZWQgYW5kb3Igc29sZCB3aXRoIGFueSBzb2Z0d2FyZSwgcHJvdmlkZWQgdGhhdCBlYWNoIGNvcHkgY29udGFpbnMgdGhlIGFib3ZlIGNvcHlyaWdodCBub3RpY2UgYW5kIHRoaXMgbGljZW5zZS4gVGhlc2UgY2FuIGJlIGluY2x1ZGVkIGVpdGhlciBhcyBzdGFuZC1hbG9uZSB0ZXh0IGZpbGVzLCBodW1hbi1yZWFkYWJsZSBoZWFkZXJzIG9yIGluIHRoZSBhcHByb3ByaWF0ZSBtYWNoaW5lLXJlYWRhYmxlIG1ldGFkYXRhIGZpZWxkcyB3aXRoaW4gdGV4dCBvciBiaW5hcnkgZmlsZXMgYXMgbG9uZyBhcyB0aG9zZSBmaWVsZHMgY2FuIGJlIGVhc2lseSB2aWV3ZWQgYnkgdGhlIHVzZXIuCgozIE5vIE1vZGlmaWVkIFZlcnNpb24gb2YgdGhlIEZvbnQgU29mdHdhcmUgbWF5IHVzZSB0aGUgUmVzZXJ2ZWQgRm9udCBOYW1lcyB1bmxlc3MgZXhwbGljaXQgd3JpdHRlbiBwZXJtaXNzaW9uIGlzIGdyYW50ZWQgYnkgdGhlIGNvcnJlc3BvbmRpbmcgQ29weXJpZ2h0IEhvbGRlci4gVGhpcyByZXN0cmljdGlvbiBvbmx5IGFwcGxpZXMgdG8gdGhlIHByaW1hcnkgZm9udCBuYW1lIGFzIHByZXNlbnRlZCB0byB0aGUgdXNlcnMuCgo0IFRoZSBuYW1lcyBvZiB0aGUgQ29weXJpZ2h0IEhvbGRlcnMgb3IgdGhlIEF1dGhvcnMgb2YgdGhlIEZvbnQgU29mdHdhcmUgc2hhbGwgbm90IGJlIHVzZWQgdG8gcHJvbW90ZSwgZW5kb3JzZSBvciBhZHZlcnRpc2UgYW55IE1vZGlmaWVkIFZlcnNpb24sIGV4Y2VwdCB0byBhY2tub3dsZWRnZSB0aGUgY29udHJpYnV0aW9ucyBvZiB0aGUgQ29weXJpZ2h0IEhvbGRlcnMgYW5kIHRoZSBBdXRob3JzIG9yIHdpdGggdGhlaXIgZXhwbGljaXQgd3JpdHRlbiBwZXJtaXNzaW9uLgoKNSBUaGUgRm9udCBTb2Z0d2FyZSwgbW9kaWZpZWQgb3IgdW5tb2RpZmllZCwgaW4gcGFydCBvciBpbiB3aG9sZSwgbXVzdCBiZSBkaXN0cmlidXRlZCBlbnRpcmVseSB1bmRlciB0aGlzIGxpY2Vuc2UsIGFuZCBtdXN0IG5vdCBiZSBkaXN0cmlidXRlZCB1bmRlciBhbnkgb3RoZXIgbGljZW5zZS4gVGhlIHJlcXVpcmVtZW50IGZvciBmb250cyB0byByZW1haW4gdW5kZXIgdGhpcyBsaWNlbnNlIGRvZXMgbm90IGFwcGx5IHRvIGFueSBkb2N1bWVudCBjcmVhdGVkIHVzaW5nIHRoZSBGb250IFNvZnR3YXJlLgoKVEVSTUlOQVRJT04KVGhpcyBsaWNlbnNlIGJlY29tZXMgbnVsbCBhbmQgdm9pZCBpZiBhbnkgb2YgdGhlIGFib3ZlIGNvbmRpdGlvbnMgYXJlIG5vdCBtZXQuCgpESVNDTEFJTUVSClRIRSBGT05UIFNPRlRXQVJFIElTIFBST1ZJREVEICJBUyBJUyIsIFdJVEhPVVQgV0FSUkFOVFkgT0YgQU5ZIEtJTkQsIEVYUFJFU1MgT1IgSU1QTElFRCwgSU5DTFVESU5HIEJVVCBOT1QgTElNSVRFRCBUTyBBTlkgV0FSUkFOVElFUyBPRiBNRVJDSEFOVEFCSUxJVFksIEZJVE5FU1MgRk9SIEEgUEFSVElDVUxBUiBQVVJQT1NFIEFORCBOT05JTkZSSU5HRU1FTlQgT0YgQ09QWVJJR0hULCBQQVRFTlQsIFRSQURFTUFSSywgT1IgT1RIRVIgUklHSFQuIElOIE5PIEVWRU5UIFNIQUxMIFRIRSBDT1BZUklHSFQgSE9MREVSIEJFIExJQUJMRSBGT1IgQU5ZIENMQUlNLCBEQU1BR0VTIE9SIE9USEVSIExJQUJJTElUWSwgSU5DTFVESU5HIEFOWSBHRU5FUkFMLCBTUEVDSUFMLCBJTkRJUkVDVCwgSU5DSURFTlRBTCwgT1IgQ09OU0VRVUVOVElBTCBEQU1BR0VTLCBXSEVUSEVSIElOIEFOIEFDVElPTiBPRiBDT05UUkFDVCwgVE9SVCBPUiBPVEhFUldJU0UsIEFSSVNJTkcgRlJPTSwgT1VUIE9GIFRIRSBVU0UgT1IgSU5BQklMSVRZIFRPIFVTRSBUSEUgRk9OVCBTT0ZUV0FSRSBPUiBGUk9NIE9USEVSIERFQUxJTkdTIElOIFRIRSBGT05UIFNPRlRXQVJFLkJyYXZ1cmFOb3JtYWwAAAEBhwMABQIAAQADAaICZwKTAsO3Dvfo+Az4MxWJl42MkZEIm5qgoJ6gCN/nvfcLi/cFCIvic+Fixwh8oXGngIsIfYtscXd1CEE5c/sRiyMIi1GSSpJiCI1/jIl/gQhLVkZOV0sIRjVgLosgCIv7QvcL+zn3iYsIoouljZ+PCJaNjYyNfwiXSJo0i1wIi/soJ3lQiwhVi3Gbi5gIi5KUjqKSCKqUr6aLxQiLwmi6TosISItjVotNCItKsin3K4sIzov3FqmL9z4Ii8R56oDJCImXjIqZkQjws87gi/cFCIv3FC33Bfsniwhxi4uLiJ0I0Pk1FayLpnCLVAiLRmpLPT0Ie3tzdHR3CISFh4yJmAiHpYmti6sIi/cw0+vIiwj7Af09FY54i4x5hQgzbVI8izYIizG6S890CJOIl4iSiwiTi4+Qi5EIi5KDjoSOCGGdbbaLuQiLxLK2yJwIm4+Nio2ACL37vgWNgIqLfIgIe4h3iXeLCPtDi/sF7Iv3HwiLxpXa3ukIx865sLqxCJWTjYqNgAjl+7MViZeMjpeKCNyEzkeLMwiLTGVYU28If4WJi4mXCA739feQ95oV+0KLPfsTiysIizu1RtyLCMqLtreLyQiLy1yzWosIcIuBhH6LCH6LiJOLlQiLs8fU8YsI9Yu5I4v7MQiLJHX7DE0rCE8uJDb7EEQIgoaFhouDCIuFj4WUiwiQi5GNkY4I9xnM9xTX9fcGCOLpv/cOi/cXCIv3QiH3CPtBiwj4DTkVbItzc4tsCItso3Oqiwiqi6Oji6oIi6pzo2yLCIz7jxVsi3R0i2wIi2yidKqLCKqLoqKLqgiLqnSibIsIDoz3wvcHFXicb5Rqiwj7D4soMIsqCItQu2jIiwjvi/cP6IvqCIv50AVtiwUOjPdy9yEV+w+LKDCLKgiL/dAFqYsFi/mNBZ96p4Gqiwjvi/cP6IvqCIvEXrBKiwgO+IgU998VAAEAAAABe2SOF+1yXw889QAAA+gAAAAA5ptuMwAAAADmsmOc/k74OAkPB58AAAAGAAIAAAAAAAABdwAAAp8AAAKs//sBTAAAAAAAAAABAAAH3PgkAAALuP5O/WsJDwPoAAAAAAAAAAAAAAAAAAAABAAEAbgBkAAFAAACigJYAAAASwKKAlgAAAFeADIApQAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAABTTVRHAEDgUOHWB9z4JAAAB9wH3AAAAAEAAAAAARMB2wAAACAABgAAAAcAWgADAAEECQAAIoAAAAADAAEECQABAA4igAADAAEECQACAA4ijgADAAEECQADACQinAADAAEECQAEAB4iwAADAAEECQAFABoi3gADAAEECQAGAA4igABDAG8AcAB5AHIAaQBnAGgAdAAgAKkAIAAyADAAMgA2ACwAIABTAHQAZQBpAG4AYgBlAHIAZwAgAE0AZQBkAGkAYQAgAFQAZQBjAGgAbgBvAGwAbwBnAGkAZQBzACAARwBtAGIASAAgACgAaAB0AHQAcAA6AC8ALwB3AHcAdwAuAHMAdABlAGkAbgBiAGUAcgBnAC4AbgBlAHQALwApACwAIAB3AGkAdABoACAAUgBlAHMAZQByAHYAZQBkACAARgBvAG4AdAAgAE4AYQBtAGUAIAAiAEIAcgBhAHYAdQByAGEAIgAuAAoACgBUAGgAaQBzACAARgBvAG4AdAAgAFMAbwBmAHQAdwBhAHIAZQAgAGkAcwAgAGwAaQBjAGUAbgBzAGUAZAAgAHUAbgBkAGUAcgAgAHQAaABlACAAUwBJAEwAIABPAHAAZQBuACAARgBvAG4AdAAgAEwAaQBjAGUAbgBzAGUALAAgAFYAZQByAHMAaQBvAG4AIAAxAC4AMQAuACAAVABoAGkAcwAgAGwAaQBjAGUAbgBzAGUAIABpAHMAIABjAG8AcABpAGUAZAAgAGIAZQBsAG8AdwAsACAAYQBuAGQAIABpAHMAIABhAGwAcwBvACAAYQB2AGEAaQBsAGEAYgBsAGUAIAB3AGkAdABoACAAYQAgAEYAQQBRACAAYQB0ADoAIABoAHQAdABwADoALwAvAHMAYwByAGkAcAB0AHMALgBzAGkAbAAuAG8AcgBnAC8ATwBGAEwACgAKAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAKAFMASQBMACAATwBQAEUATgAgAEYATwBOAFQAIABMAEkAQwBFAE4AUwBFACAAVgBlAHIAcwBpAG8AbgAgADEALgAxACAALQAgADIANgAgAEYAZQBiAHIAdQBhAHIAeQAgADIAMAAwADcACgAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ALQAtAC0ACgAKAFAAUgBFAEEATQBCAEwARQAKAFQAaABlACAAZwBvAGEAbABzACAAbwBmACAAdABoAGUAIABPAHAAZQBuACAARgBvAG4AdAAgAEwAaQBjAGUAbgBzAGUAIAAoAE8ARgBMACkAIABhAHIAZQAgAHQAbwAgAHMAdABpAG0AdQBsAGEAdABlACAAdwBvAHIAbABkAHcAaQBkAGUAIABkAGUAdgBlAGwAbwBwAG0AZQBuAHQAIABvAGYAIABjAG8AbABsAGEAYgBvAHIAYQB0AGkAdgBlACAAZgBvAG4AdAAgAHAAcgBvAGoAZQBjAHQAcwAsACAAdABvACAAcwB1AHAAcABvAHIAdAAgAHQAaABlACAAZgBvAG4AdAAgAGMAcgBlAGEAdABpAG8AbgAgAGUAZgBmAG8AcgB0AHMAIABvAGYAIABhAGMAYQBkAGUAbQBpAGMAIABhAG4AZAAgAGwAaQBuAGcAdQBpAHMAdABpAGMAIABjAG8AbQBtAHUAbgBpAHQAaQBlAHMALAAgAGEAbgBkACAAdABvACAAcAByAG8AdgBpAGQAZQAgAGEAIABmAHIAZQBlACAAYQBuAGQAIABvAHAAZQBuACAAZgByAGEAbQBlAHcAbwByAGsAIABpAG4AIAB3AGgAaQBjAGgAIABmAG8AbgB0AHMAIABtAGEAeQAgAGIAZQAgAHMAaABhAHIAZQBkACAAYQBuAGQAIABpAG0AcAByAG8AdgBlAGQAIABpAG4AIABwAGEAcgB0AG4AZQByAHMAaABpAHAAIAB3AGkAdABoACAAbwB0AGgAZQByAHMALgAKAAoAVABoAGUAIABPAEYATAAgAGEAbABsAG8AdwBzACAAdABoAGUAIABsAGkAYwBlAG4AcwBlAGQAIABmAG8AbgB0AHMAIAB0AG8AIABiAGUAIAB1AHMAZQBkACwAIABzAHQAdQBkAGkAZQBkACwAIABtAG8AZABpAGYAaQBlAGQAIABhAG4AZAAgAHIAZQBkAGkAcwB0AHIAaQBiAHUAdABlAGQAIABmAHIAZQBlAGwAeQAgAGEAcwAgAGwAbwBuAGcAIABhAHMAIAB0AGgAZQB5ACAAYQByAGUAIABuAG8AdAAgAHMAbwBsAGQAIABiAHkAIAB0AGgAZQBtAHMAZQBsAHYAZQBzAC4AIABUAGgAZQAgAGYAbwBuAHQAcwAsACAAaQBuAGMAbAB1AGQAaQBuAGcAIABhAG4AeQAgAGQAZQByAGkAdgBhAHQAaQB2AGUAIAB3AG8AcgBrAHMALAAgAGMAYQBuACAAYgBlACAAYgB1AG4AZABsAGUAZAAsACAAZQBtAGIAZQBkAGQAZQBkACwAIAByAGUAZABpAHMAdAByAGkAYgB1AHQAZQBkACAAYQBuAGQALwBvAHIAIABzAG8AbABkACAAdwBpAHQAaAAgAGEAbgB5ACAAcwBvAGYAdAB3AGEAcgBlACAAcAByAG8AdgBpAGQAZQBkACAAdABoAGEAdAAgAGEAbgB5ACAAcgBlAHMAZQByAHYAZQBkACAAbgBhAG0AZQBzACAAYQByAGUAIABuAG8AdAAgAHUAcwBlAGQAIABiAHkAIABkAGUAcgBpAHYAYQB0AGkAdgBlACAAdwBvAHIAawBzAC4AIABUAGgAZQAgAGYAbwBuAHQAcwAgAGEAbgBkACAAZABlAHIAaQB2AGEAdABpAHYAZQBzACwAIABoAG8AdwBlAHYAZQByACwAIABjAGEAbgBuAG8AdAAgAGIAZQAgAHIAZQBsAGUAYQBzAGUAZAAgAHUAbgBkAGUAcgAgAGEAbgB5ACAAbwB0AGgAZQByACAAdAB5AHAAZQAgAG8AZgAgAGwAaQBjAGUAbgBzAGUALgAgAFQAaABlACAAcgBlAHEAdQBpAHIAZQBtAGUAbgB0ACAAZgBvAHIAIABmAG8AbgB0AHMAIAB0AG8AIAByAGUAbQBhAGkAbgAgAHUAbgBkAGUAcgAgAHQAaABpAHMAIABsAGkAYwBlAG4AcwBlACAAZABvAGUAcwAgAG4AbwB0ACAAYQBwAHAAbAB5ACAAdABvACAAYQBuAHkAIABkAG8AYwB1AG0AZQBuAHQAIABjAHIAZQBhAHQAZQBkACAAdQBzAGkAbgBnACAAdABoAGUAIABmAG8AbgB0AHMAIABvAHIAIAB0AGgAZQBpAHIAIABkAGUAcgBpAHYAYQB0AGkAdgBlAHMALgAKAAoARABFAEYASQBOAEkAVABJAE8ATgBTAAoAIgBGAG8AbgB0ACAAUwBvAGYAdAB3AGEAcgBlACIAIAByAGUAZgBlAHIAcwAgAHQAbwAgAHQAaABlACAAcwBlAHQAIABvAGYAIABmAGkAbABlAHMAIAByAGUAbABlAGEAcwBlAGQAIABiAHkAIAB0AGgAZQAgAEMAbwBwAHkAcgBpAGcAaAB0ACAASABvAGwAZABlAHIAKABzACkAIAB1AG4AZABlAHIAIAB0AGgAaQBzACAAbABpAGMAZQBuAHMAZQAgAGEAbgBkACAAYwBsAGUAYQByAGwAeQAgAG0AYQByAGsAZQBkACAAYQBzACAAcwB1AGMAaAAuACAAVABoAGkAcwAgAG0AYQB5AAoAaQBuAGMAbAB1AGQAZQAgAHMAbwB1AHIAYwBlACAAZgBpAGwAZQBzACwAIABiAHUAaQBsAGQAIABzAGMAcgBpAHAAdABzACAAYQBuAGQAIABkAG8AYwB1AG0AZQBuAHQAYQB0AGkAbwBuAC4ACgAKACIAUgBlAHMAZQByAHYAZQBkACAARgBvAG4AdAAgAE4AYQBtAGUAIgAgAHIAZQBmAGUAcgBzACAAdABvACAAYQBuAHkAIABuAGEAbQBlAHMAIABzAHAAZQBjAGkAZgBpAGUAZAAgAGEAcwAgAHMAdQBjAGgAIABhAGYAdABlAHIAIAB0AGgAZQAgAGMAbwBwAHkAcgBpAGcAaAB0ACAAcwB0AGEAdABlAG0AZQBuAHQAKABzACkALgAKAAoAIgBPAHIAaQBnAGkAbgBhAGwAIABWAGUAcgBzAGkAbwBuACIAIAByAGUAZgBlAHIAcwAgAHQAbwAgAHQAaABlACAAYwBvAGwAbABlAGMAdABpAG8AbgAgAG8AZgAgAEYAbwBuAHQAIABTAG8AZgB0AHcAYQByAGUAIABjAG8AbQBwAG8AbgBlAG4AdABzACAAYQBzACAAZABpAHMAdAByAGkAYgB1AHQAZQBkACAAYgB5ACAAdABoAGUAIABDAG8AcAB5AHIAaQBnAGgAdAAgAEgAbwBsAGQAZQByACgAcwApAC4ACgAKACIATQBvAGQAaQBmAGkAZQBkACAAVgBlAHIAcwBpAG8AbgAiACAAcgBlAGYAZQByAHMAIAB0AG8AIABhAG4AeQAgAGQAZQByAGkAdgBhAHQAaQB2AGUAIABtAGEAZABlACAAYgB5ACAAYQBkAGQAaQBuAGcAIAB0AG8ALAAgAGQAZQBsAGUAdABpAG4AZwAsACAAbwByACAAcwB1AGIAcwB0AGkAdAB1AHQAaQBuAGcAIAAtAC0AIABpAG4AIABwAGEAcgB0ACAAbwByACAAaQBuACAAdwBoAG8AbABlACAALQAtACAAYQBuAHkAIABvAGYAIAB0AGgAZQAgAGMAbwBtAHAAbwBuAGUAbgB0AHMAIABvAGYAIAB0AGgAZQAgAE8AcgBpAGcAaQBuAGEAbAAgAFYAZQByAHMAaQBvAG4ALAAgAGIAeQAgAGMAaABhAG4AZwBpAG4AZwAgAGYAbwByAG0AYQB0AHMAIABvAHIAIABiAHkAIABwAG8AcgB0AGkAbgBnACAAdABoAGUAIABGAG8AbgB0ACAAUwBvAGYAdAB3AGEAcgBlACAAdABvACAAYQAgAG4AZQB3ACAAZQBuAHYAaQByAG8AbgBtAGUAbgB0AC4ACgAKACIAQQB1AHQAaABvAHIAIgAgAHIAZQBmAGUAcgBzACAAdABvACAAYQBuAHkAIABkAGUAcwBpAGcAbgBlAHIALAAgAGUAbgBnAGkAbgBlAGUAcgAsACAAcAByAG8AZwByAGEAbQBtAGUAcgAsACAAdABlAGMAaABuAGkAYwBhAGwAIAB3AHIAaQB0AGUAcgAgAG8AcgAgAG8AdABoAGUAcgAgAHAAZQByAHMAbwBuACAAdwBoAG8AIABjAG8AbgB0AHIAaQBiAHUAdABlAGQAIAB0AG8AIAB0AGgAZQAgAEYAbwBuAHQAIABTAG8AZgB0AHcAYQByAGUALgAKAAoAUABFAFIATQBJAFMAUwBJAE8ATgAgACYAIABDAE8ATgBEAEkAVABJAE8ATgBTAAoAUABlAHIAbQBpAHMAcwBpAG8AbgAgAGkAcwAgAGgAZQByAGUAYgB5ACAAZwByAGEAbgB0AGUAZAAsACAAZgByAGUAZQAgAG8AZgAgAGMAaABhAHIAZwBlACwAIAB0AG8AIABhAG4AeQAgAHAAZQByAHMAbwBuACAAbwBiAHQAYQBpAG4AaQBuAGcAIABhACAAYwBvAHAAeQAgAG8AZgAgAHQAaABlACAARgBvAG4AdAAgAFMAbwBmAHQAdwBhAHIAZQAsACAAdABvACAAdQBzAGUALAAgAHMAdAB1AGQAeQAsACAAYwBvAHAAeQAsACAAbQBlAHIAZwBlACwAIABlAG0AYgBlAGQALAAgAG0AbwBkAGkAZgB5ACwAIAByAGUAZABpAHMAdAByAGkAYgB1AHQAZQAsACAAYQBuAGQAIABzAGUAbABsACAAbQBvAGQAaQBmAGkAZQBkACAAYQBuAGQAIAB1AG4AbQBvAGQAaQBmAGkAZQBkACAAYwBvAHAAaQBlAHMAIABvAGYAIAB0AGgAZQAgAEYAbwBuAHQAIABTAG8AZgB0AHcAYQByAGUALAAgAHMAdQBiAGoAZQBjAHQAIAB0AG8AIAB0AGgAZQAgAGYAbwBsAGwAbwB3AGkAbgBnACAAYwBvAG4AZABpAHQAaQBvAG4AcwA6AAoACgAxACkAIABOAGUAaQB0AGgAZQByACAAdABoAGUAIABGAG8AbgB0ACAAUwBvAGYAdAB3AGEAcgBlACAAbgBvAHIAIABhAG4AeQAgAG8AZgAgAGkAdABzACAAaQBuAGQAaQB2AGkAZAB1AGEAbAAgAGMAbwBtAHAAbwBuAGUAbgB0AHMALAAgAGkAbgAgAE8AcgBpAGcAaQBuAGEAbAAgAG8AcgAgAE0AbwBkAGkAZgBpAGUAZAAgAFYAZQByAHMAaQBvAG4AcwAsACAAbQBhAHkAIABiAGUAIABzAG8AbABkACAAYgB5ACAAaQB0AHMAZQBsAGYALgAKAAoAMgApACAATwByAGkAZwBpAG4AYQBsACAAbwByACAATQBvAGQAaQBmAGkAZQBkACAAVgBlAHIAcwBpAG8AbgBzACAAbwBmACAAdABoAGUAIABGAG8AbgB0ACAAUwBvAGYAdAB3AGEAcgBlACAAbQBhAHkAIABiAGUAIABiAHUAbgBkAGwAZQBkACwAIAByAGUAZABpAHMAdAByAGkAYgB1AHQAZQBkACAAYQBuAGQALwBvAHIAIABzAG8AbABkACAAdwBpAHQAaAAgAGEAbgB5ACAAcwBvAGYAdAB3AGEAcgBlACwAIABwAHIAbwB2AGkAZABlAGQAIAB0AGgAYQB0ACAAZQBhAGMAaAAgAGMAbwBwAHkAIABjAG8AbgB0AGEAaQBuAHMAIAB0AGgAZQAgAGEAYgBvAHYAZQAgAGMAbwBwAHkAcgBpAGcAaAB0ACAAbgBvAHQAaQBjAGUAIABhAG4AZAAgAHQAaABpAHMAIABsAGkAYwBlAG4AcwBlAC4AIABUAGgAZQBzAGUAIABjAGEAbgAgAGIAZQAgAGkAbgBjAGwAdQBkAGUAZAAgAGUAaQB0AGgAZQByACAAYQBzACAAcwB0AGEAbgBkAC0AYQBsAG8AbgBlACAAdABlAHgAdAAgAGYAaQBsAGUAcwAsACAAaAB1AG0AYQBuAC0AcgBlAGEAZABhAGIAbABlACAAaABlAGEAZABlAHIAcwAgAG8AcgAgAGkAbgAgAHQAaABlACAAYQBwAHAAcgBvAHAAcgBpAGEAdABlACAAbQBhAGMAaABpAG4AZQAtAHIAZQBhAGQAYQBiAGwAZQAgAG0AZQB0AGEAZABhAHQAYQAgAGYAaQBlAGwAZABzACAAdwBpAHQAaABpAG4AIAB0AGUAeAB0ACAAbwByACAAYgBpAG4AYQByAHkAIABmAGkAbABlAHMAIABhAHMAIABsAG8AbgBnACAAYQBzACAAdABoAG8AcwBlACAAZgBpAGUAbABkAHMAIABjAGEAbgAgAGIAZQAgAGUAYQBzAGkAbAB5ACAAdgBpAGUAdwBlAGQAIABiAHkAIAB0AGgAZQAgAHUAcwBlAHIALgAKAAoAMwApACAATgBvACAATQBvAGQAaQBmAGkAZQBkACAAVgBlAHIAcwBpAG8AbgAgAG8AZgAgAHQAaABlACAARgBvAG4AdAAgAFMAbwBmAHQAdwBhAHIAZQAgAG0AYQB5ACAAdQBzAGUAIAB0AGgAZQAgAFIAZQBzAGUAcgB2AGUAZAAgAEYAbwBuAHQAIABOAGEAbQBlACgAcwApACAAdQBuAGwAZQBzAHMAIABlAHgAcABsAGkAYwBpAHQAIAB3AHIAaQB0AHQAZQBuACAAcABlAHIAbQBpAHMAcwBpAG8AbgAgAGkAcwAgAGcAcgBhAG4AdABlAGQAIABiAHkAIAB0AGgAZQAgAGMAbwByAHIAZQBzAHAAbwBuAGQAaQBuAGcAIABDAG8AcAB5AHIAaQBnAGgAdAAgAEgAbwBsAGQAZQByAC4AIABUAGgAaQBzACAAcgBlAHMAdAByAGkAYwB0AGkAbwBuACAAbwBuAGwAeQAgAGEAcABwAGwAaQBlAHMAIAB0AG8AIAB0AGgAZQAgAHAAcgBpAG0AYQByAHkAIABmAG8AbgB0ACAAbgBhAG0AZQAgAGEAcwAgAHAAcgBlAHMAZQBuAHQAZQBkACAAdABvACAAdABoAGUAIAB1AHMAZQByAHMALgAKAAoANAApACAAVABoAGUAIABuAGEAbQBlACgAcwApACAAbwBmACAAdABoAGUAIABDAG8AcAB5AHIAaQBnAGgAdAAgAEgAbwBsAGQAZQByACgAcwApACAAbwByACAAdABoAGUAIABBAHUAdABoAG8AcgAoAHMAKQAgAG8AZgAgAHQAaABlACAARgBvAG4AdAAgAFMAbwBmAHQAdwBhAHIAZQAgAHMAaABhAGwAbAAgAG4AbwB0ACAAYgBlACAAdQBzAGUAZAAgAHQAbwAgAHAAcgBvAG0AbwB0AGUALAAgAGUAbgBkAG8AcgBzAGUAIABvAHIAIABhAGQAdgBlAHIAdABpAHMAZQAgAGEAbgB5ACAATQBvAGQAaQBmAGkAZQBkACAAVgBlAHIAcwBpAG8AbgAsACAAZQB4AGMAZQBwAHQAIAB0AG8AIABhAGMAawBuAG8AdwBsAGUAZABnAGUAIAB0AGgAZQAgAGMAbwBuAHQAcgBpAGIAdQB0AGkAbwBuACgAcwApACAAbwBmACAAdABoAGUAIABDAG8AcAB5AHIAaQBnAGgAdAAgAEgAbwBsAGQAZQByACgAcwApACAAYQBuAGQAIAB0AGgAZQAgAEEAdQB0AGgAbwByACgAcwApACAAbwByACAAdwBpAHQAaAAgAHQAaABlAGkAcgAgAGUAeABwAGwAaQBjAGkAdAAgAHcAcgBpAHQAdABlAG4AIABwAGUAcgBtAGkAcwBzAGkAbwBuAC4ACgAKADUAKQAgAFQAaABlACAARgBvAG4AdAAgAFMAbwBmAHQAdwBhAHIAZQAsACAAbQBvAGQAaQBmAGkAZQBkACAAbwByACAAdQBuAG0AbwBkAGkAZgBpAGUAZAAsACAAaQBuACAAcABhAHIAdAAgAG8AcgAgAGkAbgAgAHcAaABvAGwAZQAsACAAbQB1AHMAdAAgAGIAZQAgAGQAaQBzAHQAcgBpAGIAdQB0AGUAZAAgAGUAbgB0AGkAcgBlAGwAeQAgAHUAbgBkAGUAcgAgAHQAaABpAHMAIABsAGkAYwBlAG4AcwBlACwAIABhAG4AZAAgAG0AdQBzAHQAIABuAG8AdAAgAGIAZQAgAGQAaQBzAHQAcgBpAGIAdQB0AGUAZAAgAHUAbgBkAGUAcgAgAGEAbgB5ACAAbwB0AGgAZQByACAAbABpAGMAZQBuAHMAZQAuACAAVABoAGUAIAByAGUAcQB1AGkAcgBlAG0AZQBuAHQAIABmAG8AcgAgAGYAbwBuAHQAcwAgAHQAbwAgAHIAZQBtAGEAaQBuACAAdQBuAGQAZQByACAAdABoAGkAcwAgAGwAaQBjAGUAbgBzAGUAIABkAG8AZQBzACAAbgBvAHQAIABhAHAAcABsAHkAIAB0AG8AIABhAG4AeQAgAGQAbwBjAHUAbQBlAG4AdAAgAGMAcgBlAGEAdABlAGQAIAB1AHMAaQBuAGcAIAB0AGgAZQAgAEYAbwBuAHQAIABTAG8AZgB0AHcAYQByAGUALgAKAAoAVABFAFIATQBJAE4AQQBUAEkATwBOAAoAVABoAGkAcwAgAGwAaQBjAGUAbgBzAGUAIABiAGUAYwBvAG0AZQBzACAAbgB1AGwAbAAgAGEAbgBkACAAdgBvAGkAZAAgAGkAZgAgAGEAbgB5ACAAbwBmACAAdABoAGUAIABhAGIAbwB2AGUAIABjAG8AbgBkAGkAdABpAG8AbgBzACAAYQByAGUAIABuAG8AdAAgAG0AZQB0AC4ACgAKAEQASQBTAEMATABBAEkATQBFAFIACgBUAEgARQAgAEYATwBOAFQAIABTAE8ARgBUAFcAQQBSAEUAIABJAFMAIABQAFIATwBWAEkARABFAEQAIAAiAEEAUwAgAEkAUwAiACwAIABXAEkAVABIAE8AVQBUACAAVwBBAFIAUgBBAE4AVABZACAATwBGACAAQQBOAFkAIABLAEkATgBEACwAIABFAFgAUABSAEUAUwBTACAATwBSACAASQBNAFAATABJAEUARAAsACAASQBOAEMATABVAEQASQBOAEcAIABCAFUAVAAgAE4ATwBUACAATABJAE0ASQBUAEUARAAgAFQATwAgAEEATgBZACAAVwBBAFIAUgBBAE4AVABJAEUAUwAgAE8ARgAgAE0ARQBSAEMASABBAE4AVABBAEIASQBMAEkAVABZACwAIABGAEkAVABOAEUAUwBTACAARgBPAFIAIABBACAAUABBAFIAVABJAEMAVQBMAEEAUgAgAFAAVQBSAFAATwBTAEUAIABBAE4ARAAgAE4ATwBOAEkATgBGAFIASQBOAEcARQBNAEUATgBUACAATwBGACAAQwBPAFAAWQBSAEkARwBIAFQALAAgAFAAQQBUAEUATgBUACwAIABUAFIAQQBEAEUATQBBAFIASwAsACAATwBSACAATwBUAEgARQBSACAAUgBJAEcASABUAC4AIABJAE4AIABOAE8AIABFAFYARQBOAFQAIABTAEgAQQBMAEwAIABUAEgARQAgAEMATwBQAFkAUgBJAEcASABUACAASABPAEwARABFAFIAIABCAEUAIABMAEkAQQBCAEwARQAgAEYATwBSACAAQQBOAFkAIABDAEwAQQBJAE0ALAAgAEQAQQBNAEEARwBFAFMAIABPAFIAIABPAFQASABFAFIAIABMAEkAQQBCAEkATABJAFQAWQAsACAASQBOAEMATABVAEQASQBOAEcAIABBAE4AWQAgAEcARQBOAEUAUgBBAEwALAAgAFMAUABFAEMASQBBAEwALAAgAEkATgBEAEkAUgBFAEMAVAAsACAASQBOAEMASQBEAEUATgBUAEEATAAsACAATwBSACAAQwBPAE4AUwBFAFEAVQBFAE4AVABJAEEATAAgAEQAQQBNAEEARwBFAFMALAAgAFcASABFAFQASABFAFIAIABJAE4AIABBAE4AIABBAEMAVABJAE8ATgAgAE8ARgAgAEMATwBOAFQAUgBBAEMAVAAsACAAVABPAFIAVAAgAE8AUgAgAE8AVABIAEUAUgBXAEkAUwBFACwAIABBAFIASQBTAEkATgBHACAARgBSAE8ATQAsACAATwBVAFQAIABPAEYAIABUAEgARQAgAFUAUwBFACAATwBSACAASQBOAEEAQgBJAEwASQBUAFkAIABUAE8AIABVAFMARQAgAFQASABFACAARgBPAE4AVAAgAFMATwBGAFQAVwBBAFIARQAgAE8AUgAgAEYAUgBPAE0AIABPAFQASABFAFIAIABEAEUAQQBMAEkATgBHAFMAIABJAE4AIABUAEgARQAgAEYATwBOAFQAIABTAE8ARgBUAFcAQQBSAEUALgBCAHIAYQB2AHUAcgBhAFIAZQBnAHUAbABhAHIAMQAuADQAOAAyADsAUwBNAFQARwA7AEIAcgBhAHYAdQByAGEAQgByAGEAdgB1AHIAYQAgAFIAZQBnAHUAbABhAHIAVgBlAHIAcwBpAG8AbgAgADEALgA0ADgAMgAAAAAAAgAAAAMAAAAUAAMAAQAAABQABAAwAAAACAAIAAIAAOBQ4GLh1v//AADgUOBi4dX//x+xH6AeLgABAAAAAAAAAAAAAwAAAAAAAP+1ADIAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAACgAcAB4AAURGTFQACAAEAAAAAP//AAAAAAAAAAEAAAAKABwAHgABREZMVAAIAAQAAAAA//8AAAAAAAA=) format("opentype");
 }
 </style>
-<script>
-if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
-  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
-}
-</script>
 </body>
 </html>
