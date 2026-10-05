@@ -46,7 +46,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.0.12", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.0.13", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -101,7 +101,7 @@ const linesOf    = (c) => (c === 1 ? S.lf : S.lg);
 const lowStep    = (c) => bottomStep(c) - 1 - 2 * linesOf(c);
 const highStep   = (c) => bottomStep(c) + 9 + 2 * linesOf(c);
 const cv  = document.getElementById("c");
-const ctx = cv.getContext("2d");
+let ctx = cv.getContext("2d");
 let L = {};
 function safeArea() {
 const cs = getComputedStyle(document.getElementById("safe"));
@@ -296,11 +296,11 @@ function pickStep(clef) {
   return pool[pool.length - 1].s;
 }
 function makeNote(prev) {
-  const clef = plan[generated++], s = pickStep(clef);
+  const clef = plan[generated++], s = pickStep(clef), isLast = generated === SESSION_N;
   lastKey = clef * 1000 + s;
   const extra = prev && prev.clef !== clef ? CLEF_GAP : 0;
   const t = prev ? prev.tslot + 1 + extra : 0;
-  return { step: s, clef, extra, slot: t, tslot: t, state: 0, shake: 0 };
+  return { step: s, clef, extra, slot: t, tslot: t, state: 0, shake: 0, last: isLast };
 }
 // startSession(false) = normal · startSession(true, claves) = repaso · startSession() = repetir el modo actual
 function startSession(review, clefs) {
@@ -342,6 +342,7 @@ function pauseEnd() {
 let savedScroll = 0;
 function setSettings(v) {
   if (v === settingsOpen) return;
+  startTrans(v ? 1 : -1);
   settingsOpen = v;
   if (v) { savedScroll = scrollY; scrollY = 0; scrollV = 0; maxScroll = 0; }
   else { scrollY = savedScroll; scrollV = 0; }
@@ -632,7 +633,7 @@ document.addEventListener("visibilitychange", () => {
 });
 /* ===================== PWA: instalar · actualizar · pantalla encendida · botón atrás ===================== */
 let deferredInstall = null, updReady = false, updDismissed = false, updWaiting = null, wantReload = false;
-let histPushed = false, wakeLock = null, wakeBusy = false, lastMoved = false;
+let wakeLock = null, wakeBusy = false, lastMoved = false;
 // Instalar (Chrome/Edge): se guarda el evento y se lanza desde Ajustes
 addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; dirty = true; });
 addEventListener("appinstalled", () => { deferredInstall = null; dirty = true; });
@@ -698,20 +699,76 @@ async function wakeOn() {
 function wakeOff() { const l = wakeLock; wakeLock = null; if (l) { try { l.release(); } catch (e) {} } }
 const wakeSync = () => (scene === "game" ? wakeOn() : wakeOff());
 document.addEventListener("visibilitychange", () => { if (!document.hidden) wakeSync(); });   // el sistema lo libera al ocultar la app
-// Botón/gesto "atrás" del móvil: una entrada de historial mientras estás fuera del menú
-const needsEntry = () => scene !== "menu" || settingsOpen;
+// Botón/gesto "atrás" del móvil: una entrada de historial por nivel de pantalla.
+// Niveles: menú 0 · claves/estadísticas 1 · partida/resumen 2 · ajustes suma 1.
+const depth = () => (scene === "menu" ? 0 : scene === "game" || scene === "summary" ? 2 : 1) + (settingsOpen ? 1 : 0);
+let histD = 0, popLock = false, popPending = false;
+try {
+  const hs = history.state;
+  if (hs && +hs.rn > 0) histD = +hs.rn | 0;          // recarga con entradas antiguas: se limpian al arrancar
+  else if (!hs) history.replaceState({ rn: 0 }, "");
+} catch (e) {}
 function syncHist() {
-  if (histPushed || !needsEntry()) return;
-  try { history.pushState({ rn: 1 }, ""); histPushed = true; } catch (e) {}
+  if (popLock || popPending) return;
+  const d = depth();
+  try {
+    if (d > histD) { while (histD < d) history.pushState({ rn: ++histD }, ""); }
+    else if (d < histD) {                              // se subió con la flecha de la app: se quitan las entradas sobrantes
+      popPending = true;  setTimeout(() => { popPending = false; }, 1200);
+      history.go(d - histD);
+    }
+  } catch (e) { popPending = false; }
 }
-addEventListener("popstate", () => {
-  if (!histPushed) return;
-  histPushed = false;
-  if (settingsOpen) setSettings(false);
-  else if (scene !== "menu") act("back");
-  else { try { history.back(); } catch (e) {} return; }   // ya en el menú: salir
-  syncHist();
+addEventListener("popstate", (e) => {
+  const t = e.state && +e.state.rn > 0 ? +e.state.rn | 0 : 0;   // nivel de la entrada a la que se ha llegado
+  const prev = histD, mine = popPending;                       // mine: la hemos provocado nosotros al limpiar entradas
+  popPending = false;  histD = t;
+  if (!mine && t < prev) {                                     // el usuario pulsó Atrás: se sube UN nivel
+    popLock = true;
+    if (settingsOpen) setSettings(false);
+    else if (scene !== "menu") act("back");
+    popLock = false;
+  }
+  const d = depth();
+  try {
+    if (d > histD) { while (histD < d) history.pushState({ rn: ++histD }, ""); }   // el navegador se saltó entradas: se reconstruyen
+    else if (d < histD) syncHist();
+  } catch (err) {}
 });
+
+/* ---------- animación entre pantallas (entra una y sale otra) ---------- */
+let trans = null, snapC = null, newC = null, newX = null;
+function ensureC() {
+  if (!snapC) { snapC = document.createElement("canvas"); newC = document.createElement("canvas"); newX = newC.getContext("2d"); }
+  if (snapC.width !== cv.width || snapC.height !== cv.height) { snapC.width = newC.width = cv.width; snapC.height = newC.height = cv.height; }
+}
+function startTrans(dir) {
+  try {
+    if (!cv.width || document.hidden || (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches)) return;
+    ensureC();
+    const g = snapC.getContext("2d");  g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, snapC.width, snapC.height);  g.drawImage(cv, 0, 0);   // foto de la pantalla que se va
+    trans = { dir, t0: performance.now(), dur: 280 };
+    dirty = true;
+  } catch (e) { trans = null; }
+}
+function drawFrame(t) {
+  if (!trans) { draw(t); return; }
+  const p = clamp((performance.now() - trans.t0) / trans.dur, 0, 1);
+  ensureC();
+  const main = ctx;
+  ctx = newX;
+  try { draw(t); } finally { ctx = main; }
+  const W = cv.width, H = cv.height, e = 1 - Math.pow(1 - p, 3), fwd = trans.dir > 0, k = fwd ? e : 1 - e;
+  const under = fwd ? snapC : newC, over = fwd ? newC : snapC;
+  const ux = -0.26 * W * k, ox = fwd ? W * (1 - e) : W * e, dpr = L.dpr || 1;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);  ctx.globalAlpha = 1;
+  ctx.drawImage(under, ux, 0);
+  ctx.fillStyle = "rgba(0,0,0," + (0.35 * k).toFixed(3) + ")";  ctx.fillRect(0, 0, W, H);
+  ctx.save();  ctx.shadowColor = "rgba(0,0,0,.5)";  ctx.shadowBlur = 22 * dpr;  ctx.shadowOffsetX = -3 * dpr;
+  ctx.drawImage(over, ox, 0);  ctx.restore();
+  if (p >= 1) { trans = null; dirty = true; }
+}
 
 let midiAccess = null;
 const seenMidi = new Set();
@@ -836,6 +893,18 @@ glyph(n.clef === 0 ? G_CLEF : F_CLEF, x - 2.7 * L.sp, stepY(cb + (n.clef === 0 ?
 }
 drawNote(n.step, x + shake, col, n.clef);
 ctx.globalAlpha = 1;
+}
+const ln = notes.find((n) => n.last);
+if (ln) {
+const bx = noteX(ln) + L.gap * 0.72, ba = clamp((bx - L.leftLimit) / (1.6 * L.sp), 0, 1);
+if (ba > 0 && bx < p.x + p.w) {
+const dk = S.skin === 1, ink = dk ? "#9a9a9a" : C.ink, yb = L.bottomY, yt = L.bottomY - 4 * L.sp;
+const thin = Math.max(1.2, L.sp * (dk ? 0.07 : 0.11)), thick = Math.max(3, L.sp * 0.42);
+ctx.globalAlpha = ba;
+line(bx, yt, bx, yb, ink, thin);
+ctx.fillStyle = ink;  ctx.fillRect(bx + L.sp * 0.28, yt - thin / 2, thick, yb - yt + thin);
+ctx.globalAlpha = 1;
+}
 }
 ctx.restore();
 }
@@ -1029,7 +1098,10 @@ function drawSettings() {
 /* ===================== PANTALLAS NUEVAS ===================== */
 function addHit(id, x, y, w, h) { sceneHits.push({ id, x, y, w, h, hidden: true, text: "", active: false }); }
 function go(s) {
+  const d0 = depth(), changed = s !== scene;
+  if (changed) startTrans(-1);
   scene = s;  sceneHits = [];  scrollY = 0;  scrollV = 0;  maxScroll = 0;  drag = null;  finishAt = 0;
+  if (changed && trans) trans.dir = depth() >= d0 ? 1 : -1;
   dirty = true;
   syncHist();  wakeSync();
 }
@@ -1500,7 +1572,7 @@ const hi = settingsOpen || scene !== "game" ? -1 : wheelIndex(pointer);
 let hb = "";
 for (const b of buttons) if (hit(b, pointer)) { hb = b.id; break; }
 if (hi !== hoverIdx || hb !== hoverBtn) { hoverIdx = hi; hoverBtn = hb; dirty = true; }
-if (moving || dirty) { draw(t); dirty = false; }
+if (moving || dirty || trans) { drawFrame(t); dirty = false; }
 requestAnimationFrame(frame);
 }
 function onResize() { layout(); dirty = true; }
@@ -1513,6 +1585,7 @@ function start() {
 loadSettings();
 loadSessions();
 layout();
+syncHist();
 if (S.midi) initMidi();
 requestAnimationFrame(frame);
 }

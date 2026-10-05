@@ -1,6 +1,7 @@
 /* ReadNotes – service worker (funciona sin conexión)
-   Sube el número de VERSION cada vez que publiques una nueva versión de la app. */
-const VERSION = "v1";
+   Cambia VERSION en cada publicación: así los móviles detectan la nueva versión
+   y muestran el aviso "Nueva versión disponible". */
+const VERSION = "1.0.13";
 const CACHE = "readnotes-" + VERSION;
 const ASSETS = [
   "./",
@@ -14,7 +15,12 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // Sin skipWaiting automático: la app avisa y el usuario decide cuándo actualizar
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: "reload" })))));
+});
+
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {
@@ -29,10 +35,10 @@ self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
 
-  // Páginas: red primero (así llegan las actualizaciones) y, sin conexión, la copia guardada
+  // Páginas: red primero, saltándose la caché HTTP de GitHub Pages (10 min); sin conexión, copia guardada
   if (req.mode === "navigate") {
     e.respondWith(
-      fetch(req)
+      fetch(req, { cache: "no-cache" })
         .then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put("index.html", copy)); return res; })
         .catch(() => caches.match("index.html"))
     );
