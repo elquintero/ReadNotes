@@ -4,12 +4,8 @@
   "description": "Entrena la lectura de notas en el pentagrama",
   "start_url": "./",
   "scope": "./",
-  "id": "/Reading-Trainer-HTML/",
-  "display": "fullscreen",
-  "display_override": [
-    "fullscreen",
-    "standalone"
-  ],
+  "id": "/insreadnotes/",
+  "display": "standalone",
   "orientation": "portrait",
   "background_color": "#141721",
   "theme_color": "#141721",
