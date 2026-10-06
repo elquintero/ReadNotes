@@ -1,7 +1,7 @@
 /* ReadNotes – service worker (funciona sin conexión)
    Cambia VERSION en cada publicación: así los móviles detectan la nueva versión
    y muestran el aviso "Nueva versión disponible". */
-const VERSION = "1.0.18";
+const VERSION = "1.0.19";
 const CACHE = "readnotes-" + VERSION;
 const SOUND = "readnotes-sound";            // muestras de piano: se conservan entre versiones
 const ASSETS = [
@@ -14,10 +14,15 @@ const ASSETS = [
   "icons/apple-touch-icon.png",
   "icons/favicon-32.png"
 ];
+// Archivos opcionales: si faltan en el repositorio no deben romper la instalación del service worker
+const OPTIONAL = ["fonts/Bravura.otf", "Fonts/Bravura.otf"];
 
 self.addEventListener("install", (e) => {
   // Sin skipWaiting automático: la app avisa y el usuario decide cuándo actualizar
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: "reload" })))));
+  e.waitUntil(caches.open(CACHE).then(async (c) => {
+    await c.addAll(ASSETS.map((u) => new Request(u, { cache: "reload" })));
+    await Promise.all(OPTIONAL.map((u) => c.add(new Request(u, { cache: "reload" })).catch(() => {})));   // la fuente: se guarda si existe
+  }));
 });
 
 self.addEventListener("message", (e) => {
