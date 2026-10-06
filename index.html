@@ -46,13 +46,14 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.0.16", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.0.17", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
-  cyan: "#2ed3e6", amber: "#ffb454", ok: "#4ade80", mid: "#f5c542", bad: "#ff6b6b", bar: "#2a6f86"
+  cyan: "#2ed3e6", acc: "#2a6f86", accT: "#62b0c9", amber: "#ffb454", ok: "#4ade80", mid: "#f5c542", bad: "#ff6b6b", bar: "#2a6f86"
 };
-const clefCol = (c) => (c === 1 ? AC.amber : AC.cyan);
+const clefCol = (c) => (c === 1 ? AC.amber : AC.acc);      // color de la clave en formas y gráficos
+const clefTxt = (c) => (c === 1 ? AC.amber : AC.accT);     // variante clara para texto sobre fondo oscuro
 const C = {
 bg: "#141721",   ink: "#111111",  paper: "#ffffff", ui: "#edf0f7",
 cur: "#1a61eb",  ok: "#149440",   bad: "#d92626",
@@ -279,9 +280,10 @@ function playSample(buf, vol) {
 function pianoStatus() {
   if (!S.piano) return "Sintetizador";
   const need = pianoSteps(S.mode), got = need.filter((s) => pBuf.has(s)).length;
-  if (got === need.length) return "Muestras reales cargadas (" + got + ")";
-  if (pFail > 6 && !got) return "No se encuentra la carpeta Sound: suena el sintetizador";
-  return "Cargando muestras… " + got + "/" + need.length;
+  const cnt = "Bajados " + got + "/" + need.length;
+  if (got === need.length) return cnt;
+  if (pFail > 6) return cnt + " · faltan archivos en Sound";
+  return cnt + "…";
 }
 function playNote(step, vol = 0.5) {
   if (S.piano && S.sound && S.vol) {
@@ -603,7 +605,7 @@ if (deferredInstall || updReady) rows.push({ k: "hd", label: "Aplicación" });
 if (deferredInstall) rows.push({ k: "tap", label: "Instalar app", value: "Añádela a tu pantalla de inicio o escritorio", id: "install" });
 if (updReady) rows.push({ k: "tap", label: "Nueva versión disponible", value: "Toca para actualizar ahora", id: "update" });
 rows.push({ k: "hd", label: "Créditos" });
-rows.push({ k: "note", tight: true, small: true, label: "Diseño y Desarrollado por:  ElQuintero" });
+rows.push({ k: "note", tight: true, small: true, label: "Diseño y Desarrollado por:  J.L Quintero" });
 rows.push({ k: "note", tight: true, label: "Piano: tonejs-instruments (N. Brosowsky), CC BY 3.0" });
 return rows;
 }
@@ -750,7 +752,7 @@ function drawUpdateBanner() {
   const cw2 = h * 0.8, bw = clamp(w * 0.3, 92, 130), bx = x + w - cw2 - bw - 2, by = y + 7, bh = h - 14;
   ctx.save();  ctx.shadowColor = "rgba(0,0,0,.55)";  ctx.shadowBlur = 14;
   ctx.fillStyle = "#1d3b46";  rr(x, y, w, h, 12);  ctx.fill();  ctx.restore();
-  ctx.strokeStyle = AC.cyan;  ctx.lineWidth = 1.2;  rr(x, y, w, h, 12);  ctx.stroke();
+  ctx.strokeStyle = AC.acc;  ctx.lineWidth = 1.2;  rr(x, y, w, h, 12);  ctx.stroke();
   text("Nueva versión disponible", x + 14, y + h / 2, clamp(h * 0.3, 13, 16), "#e6f4f7", "left", "", bx - x - 22);
   actionBtn(bx, by, bw, bh, "Actualizar", true, hoverBtn === "update");
   const cx = x + w - cw2 / 2 - 2, cy = y + h / 2, r = 5;
@@ -1129,7 +1131,7 @@ function drawSettings() {
       if (r.k === "hd") {
         text(r.label, x + pad, y + h * 0.66, clamp(rowH * 0.23, 13, 17), AC.dim, "left");
       } else if (r.k === "note") {
-        if (r.tight) text(r.label, x + pad + 8, y + h / 2, r.small ? clamp(L.fs * 0.78, 10, 13) : clamp(L.fs * 0.95, 11, 15), r.small ? "#8d8d8d" : "#6f6f6f", "left", "", w - pad * 2 - 8);
+        if (r.tight) text(r.label, x + pad + 8, y + h / 2, clamp(L.fs * 0.95, 11, 15), r.small ? "#8d8d8d" : "#6f6f6f", "left", "", w - pad * 2 - 8);
         else text(r.label, x + w / 2, y + h / 2, clamp(L.fs, 11, 15), "#6f6f6f", "center", "", w - 24);
       } else {
         const bw = clamp(rowH * 0.55, 36, 46), bh2 = bw * 0.85;
@@ -1139,7 +1141,7 @@ function drawSettings() {
         text(r.value, x + pad, y + h * 0.68, clamp(rowH * 0.22, 13, 17), AC.dim, "left", "", mw);
         if (r.k === "sw") {
           const tw = 46, th = 22, sx = x + w - pad - tw, sy = y + h / 2 - th / 2;
-          ctx.fillStyle = r.on ? "rgba(46,211,230,.5)" : "#4a4a4a";  rr(sx, sy, tw, th, th / 2);  ctx.fill();
+          ctx.fillStyle = r.on ? AC.acc : "#4a4a4a";  rr(sx, sy, tw, th, th / 2);  ctx.fill();
           ctx.fillStyle = r.on ? "#ffffff" : "#b8b8b8";
           ctx.beginPath();  ctx.arc(r.on ? sx + tw - th / 2 : sx + th / 2, sy + th / 2, th / 2 + 1.5, 0, Math.PI * 2);  ctx.fill();
           vis(r.id, x, y, w, h);
@@ -1222,22 +1224,22 @@ function computeStats() {
 function titleUnderlined(str, cx, cy, size, maxW) {
   text(str, cx, cy, size, "#d6d6d6", "center", "300", maxW);
   const w = ctx.measureText(str).width;
-  ctx.strokeStyle = AC.cyan;  ctx.lineWidth = 3.5;  ctx.lineCap = "round";
+  ctx.strokeStyle = AC.acc;  ctx.lineWidth = 3.5;  ctx.lineCap = "round";
   ctx.beginPath();  ctx.moveTo(cx - w * 0.58, cy + size * 0.78);  ctx.lineTo(cx + w * 0.58, cy + size * 0.78);  ctx.stroke();
   ctx.lineCap = "butt";
 }
 function bigButton(id, x, y, w, h, label) {
   const hov = hoverBtn === id;
-  ctx.fillStyle = hov ? "rgba(46,211,230,.14)" : "rgba(255,255,255,.03)";
+  ctx.fillStyle = hov ? "rgba(42,111,134,.28)" : "rgba(255,255,255,.03)";
   rr(x, y, w, h, 10);  ctx.fill();
-  ctx.strokeStyle = hov ? AC.cyan : "#5c5c5c";  ctx.lineWidth = 1.5;  ctx.stroke();
+  ctx.strokeStyle = hov ? AC.acc : "#5c5c5c";  ctx.lineWidth = 1.5;  ctx.stroke();
   text(label, x + w / 2, y + h / 2, clamp(h * 0.4, 16, 26), hov ? "#fff" : AC.txt, "center", "", w - 16);
   addHit(id, x, y, w, h);
 }
 function actionBtn(x, y, w, h, label, primary, hov) {
   if (primary) {
-    ctx.fillStyle = hov ? "#5ae3f2" : AC.cyan;  rr(x, y, w, h, 10);  ctx.fill();
-    text(label, x + w / 2, y + h / 2, clamp(h * 0.36, 15, 21), "#10262b", "center", "bold", w - 12);
+    ctx.fillStyle = hov ? "#3a87a1" : AC.acc;  rr(x, y, w, h, 10);  ctx.fill();
+    text(label, x + w / 2, y + h / 2, clamp(h * 0.36, 15, 21), "#ffffff", "center", "bold", w - 12);
   } else {
     ctx.fillStyle = hov ? "rgba(255,255,255,.09)" : "rgba(255,255,255,.03)";  rr(x, y, w, h, 10);  ctx.fill();
     ctx.strokeStyle = "#5c5c5c";  ctx.lineWidth = 1.5;  ctx.stroke();
@@ -1269,9 +1271,9 @@ function seg(x, y, w, h, labels, active, prefix, vals) {
   panel(x, y, w, h);
   for (let i = 0; i < n; i++) {
     const sx = x + i * sw, id = prefix + vals[i], on = i === active;
-    if (on) { ctx.fillStyle = AC.cyan;  rr(sx + 3, y + 3, sw - 6, h - 6, 8);  ctx.fill(); }
+    if (on) { ctx.fillStyle = AC.acc;  rr(sx + 3, y + 3, sw - 6, h - 6, 8);  ctx.fill(); }
     else if (hoverBtn === id) { ctx.fillStyle = "rgba(255,255,255,.07)";  rr(sx + 3, y + 3, sw - 6, h - 6, 8);  ctx.fill(); }
-    text(labels[i], sx + sw / 2, y + h / 2, clamp(h * 0.38, 13, 17), on ? "#10262b" : AC.txt, "center", on ? "bold" : "", sw - 8);
+    text(labels[i], sx + sw / 2, y + h / 2, clamp(h * 0.38, 13, 17), on ? "#ffffff" : AC.txt, "center", on ? "bold" : "", sw - 8);
     addHit(id, sx, y, sw, h);
   }
 }
@@ -1336,15 +1338,15 @@ function drawMenu(t) {
   const bwid = ctx.measureText(label).width + 22, bhei = fs * 2;
   const bx = L.cx0 + L.cw - L.m - bwid, by = L.bot - L.m - bhei;
   ctx.fillStyle = "rgba(33,33,33,.88)";  rr(bx, by, bwid, bhei, 4);  ctx.fill();
-  ctx.strokeStyle = AC.cyan;  ctx.lineWidth = 1.2;  ctx.stroke();
+  ctx.strokeStyle = AC.acc;  ctx.lineWidth = 1.2;  ctx.stroke();
   text(label, bx + bwid / 2, by + bhei / 2, fs, "#d0d0d0", "center");
 }
 
 /* ---------- elección de clave ---------- */
 function clefCard(id, mode, x, y, w, h, top) {
-  const hov = hoverBtn === id, sel = S.mode === mode;
-  ctx.fillStyle = hov ? "rgba(46,211,230,.12)" : AC.card;  rr(x, y, w, h, 12);  ctx.fill();
-  ctx.strokeStyle = hov || sel ? AC.cyan : AC.edge;  ctx.lineWidth = sel ? 2 : 1.2;  ctx.stroke();
+  const hov = hoverBtn === id;
+  ctx.fillStyle = hov ? "rgba(42,111,134,.25)" : AC.card;  rr(x, y, w, h, 12);  ctx.fill();
+  ctx.strokeStyle = hov ? AC.acc : AC.edge;  ctx.lineWidth = 1.2;  ctx.stroke();
   const s = h * 0.1, cy = y + h / 2, ix = x + h * 0.15, iw = h * 0.72;
   for (let i = 0; i < 5; i++) line(ix, cy + (i - 2) * s, ix + iw, cy + (i - 2) * s, "#6b6b6b", 1);
   const col = "#e6e6e6";
@@ -1354,7 +1356,7 @@ function clefCard(id, mode, x, y, w, h, top) {
   const tx = ix + iw + h * 0.13;
   text(MODE_NAME[mode], tx, y + h * 0.38, clamp(h * 0.23, 15, 22), AC.txt, "left", "", x + w - tx - 40);
   text(["Registro agudo", "Registro grave", "Intercaladas al azar"][mode], tx, y + h * 0.68, clamp(h * 0.16, 12, 15), AC.dim, "left", "", x + w - tx - 40);
-  ctx.strokeStyle = sel || hov ? AC.cyan : "#777";  ctx.lineWidth = 2;  ctx.lineCap = "round";
+  ctx.strokeStyle = hov ? AC.accT : "#777";  ctx.lineWidth = 2;  ctx.lineCap = "round";
   ctx.beginPath();  ctx.moveTo(x + w - 26, cy - 8);  ctx.lineTo(x + w - 18, cy);  ctx.lineTo(x + w - 26, cy + 8);  ctx.stroke();
   ctx.lineCap = "butt";
   visHit(id, x, y, w, h, top);
@@ -1366,16 +1368,16 @@ function visHit(id, x, y, w, h, top) {
 }
 // selector de líneas adicionales: fila propia, botones grandes y a todo el ancho
 function lineSel(c, x, y, w, top) {
-  const col = clefCol(c), val = c === 1 ? S.lf : S.lg;
+  const col = clefCol(c), colT = clefTxt(c), val = c === 1 ? S.lf : S.lg;
   text("Líneas adicionales", x + 2, y + 9, 13, AC.dim, "left");
-  text("Rango: " + noteLabel(lowStep(c)) + " – " + noteLabel(highStep(c)), x + w - 2, y + 9, 13, col, "right");
+  text("Rango: " + noteLabel(lowStep(c)) + " – " + noteLabel(highStep(c)), x + w - 2, y + 9, 13, colT, "right");
   const by = y + 24, bh = 46, gp = 6, bw = (w - 4 * gp) / 5;
   for (let n = 0; n <= 4; n++) {
     const bx = x + n * (bw + gp), on = val === n, id = "ln_" + c + "_" + n;
-    ctx.fillStyle = on ? (c ? "rgba(255,180,84,.2)" : "rgba(46,211,230,.2)") : hoverBtn === id ? "#454545" : "#3b3b3b";
+    ctx.fillStyle = on ? (c ? "rgba(255,180,84,.2)" : "rgba(42,111,134,.45)") : hoverBtn === id ? "#454545" : "#3b3b3b";
     rr(bx, by, bw, bh, 10);  ctx.fill();
     ctx.strokeStyle = on ? col : "#4a4a4a";  ctx.lineWidth = on ? 1.6 : 1;  ctx.stroke();
-    text(String(n), bx + bw / 2, by + bh / 2, 17, on ? col : "#9a9a9a", "center", on ? "bold" : "");
+    text(String(n), bx + bw / 2, by + bh / 2, 17, on ? (c ? col : "#ffffff") : "#9a9a9a", "center", on ? "bold" : "");
     visHit(id, bx, by, bw, bh, top);
   }
 }
