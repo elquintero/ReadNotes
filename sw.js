@@ -1,7 +1,7 @@
 /* ReadNotes – service worker (funciona sin conexión)
    Cambia VERSION en cada publicación: así los móviles detectan la nueva versión
    y muestran el aviso "Nueva versión disponible". */
-const VERSION = "1.0.14";
+const VERSION = "1.0.15";
 const CACHE = "readnotes-" + VERSION;
 const SOUND = "readnotes-sound";            // muestras de piano: se conservan entre versiones
 const ASSETS = [
@@ -47,7 +47,7 @@ self.addEventListener("fetch", (e) => {
   }
 
   // Muestras de piano: caché primero (se descargan una vez y quedan guardadas)
-  if (url.pathname.includes("/sound/")) {
+  if (url.pathname.toLowerCase().includes("/sound/")) {
     e.respondWith(
       caches.open(SOUND).then((c) => c.match(req).then((hit) => hit || fetch(req).then((res) => {
         if (res.ok) c.put(req, res.clone());

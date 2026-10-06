@@ -46,7 +46,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.0.14", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.0.15", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -224,7 +224,8 @@ osc.start(t);  osc.stop(t + dur + 0.05);
 }
 const midi = (step) => 60 + 12 * Math.floor(step / 7) + SEMITONES[mod(step, 7)];
 /* ---------- piano real: muestras mp3 en la carpeta sound/ (una por nota natural, p. ej. sound/C4.mp3) ---------- */
-const PIANO_DIR = "sound/";
+const PIANO_DIRS = ["Sound/", "sound/"];
+let pDir = 0;
 const pianoName = (step) => NAMES_EN[mod(step, 7)] + (4 + Math.floor(step / 7));
 const pBuf = new Map(), pLoading = new Map();
 let pFail = 0, pQueue = [], pActive = 0, pVoices = [];
@@ -237,8 +238,9 @@ function pianoLoad(step) {
   if (pBuf.has(step) || pLoading.has(step) || pFail > 6) return Promise.resolve(null);
   const a = audio();
   if (!a) return Promise.resolve(null);
-  const p = fetch(PIANO_DIR + pianoName(step) + ".mp3")
-    .then((r) => { if (!r.ok) throw new Error("http " + r.status); return r.arrayBuffer(); })
+  const name = pianoName(step), order = [pDir, 1 - pDir];
+  const one = (k) => fetch(PIANO_DIRS[order[k]] + name + ".mp3").then((r) => { if (!r.ok) throw new Error("http " + r.status); pDir = order[k]; return r.arrayBuffer(); });
+  const p = one(0).catch(() => one(1))
     .then((ab) => new Promise((res, rej) => { const q = a.decodeAudioData(ab, res, rej); if (q && q.catch) q.catch(rej); }))
     .then((buf) => { pBuf.set(step, buf); pFail = 0; dirty = true; return buf; })
     .catch(() => { pFail++; return null; })
@@ -280,7 +282,7 @@ function pianoStatus() {
   if (!S.piano) return "Sintetizador";
   const need = pianoSteps(S.mode), got = need.filter((s) => pBuf.has(s)).length;
   if (got === need.length) return "Muestras reales cargadas (" + got + ")";
-  if (pFail > 6 && !got) return "Sin muestras: se usa el sintetizador";
+  if (pFail > 6 && !got) return "No se encuentra la carpeta Sound: suena el sintetizador";
   return "Cargando muestras… " + got + "/" + need.length;
 }
 function playNote(step, vol = 0.5) {
@@ -595,7 +597,6 @@ const rows = [
 ];
 if (navigator.requestMIDIAccess) rows.push({ k: "sw", label: "Teclado MIDI", value: S.midi ? "Habilitado" : "Deshabilitado", on: S.midi, id: S.midi ? "midi_off" : "midi_on" });
 rows.push({ k: "sw", label: "Práctica adaptativa", value: S.adapt ? "Más práctica en tus notas débiles" : "Notas totalmente al azar", on: S.adapt, id: S.adapt ? "adapt_off" : "adapt_on" });
-if (S.piano) rows.push({ k: "note", label: "Piano: tonejs-instruments (N. Brosowsky), CC BY 3.0" });
 rows.push({ k: "hd", label: "Apariencia" });
 rows.push({ k: "tap", label: "Tema de la aplicación", value: S.skin === 1 ? "Oscuro" : "Clásico", id: S.skin === 1 ? "skin_0" : "skin_1" });
 rows.push({ k: "step", label: "Notas visibles", value: String(S.visible), minus: "vis_-", plus: "vis_+" });
@@ -604,6 +605,8 @@ else rows.push({ k: "note", label: "iPhone: Compartir › Añadir a pantalla de 
 if (deferredInstall || updReady) rows.push({ k: "hd", label: "Aplicación" });
 if (deferredInstall) rows.push({ k: "tap", label: "Instalar app", value: "Añádela a tu pantalla de inicio o escritorio", id: "install" });
 if (updReady) rows.push({ k: "tap", label: "Nueva versión disponible", value: "Toca para actualizar ahora", id: "update" });
+rows.push({ k: "hd", label: "Créditos" });
+rows.push({ k: "note", label: "Piano: tonejs-instruments (N. Brosowsky), CC BY 3.0" });
 return rows;
 }
 // los botones salen de lo que se dibuja (cada pantalla los registra con addHit)
