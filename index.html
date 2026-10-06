@@ -46,7 +46,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.0.13", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.0.14", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -69,6 +69,7 @@ lf: 1,
 visible: 6,
 es: true,
 sound: true,
+piano: true,
 vol: 7,
 haptic: true,
 midi: false,
@@ -85,6 +86,7 @@ S.lf = clamp(int(raw.lf !== undefined ? raw.lf : raw.above, 1), 0, 4);
 S.visible = clamp(int(raw.visible, 6), 3, 8);
 S.es     = raw.es !== false;
 S.sound  = raw.sound !== false;
+S.piano  = raw.piano !== false;
 S.vol    = clamp(int(raw.vol, 7), 0, 10);
 S.haptic = raw.haptic !== false;
   S.skin = raw.skin === 1 ? 1 : 0;
@@ -221,10 +223,75 @@ osc.connect(g);  g.connect(a.destination);
 osc.start(t);  osc.stop(t + dur + 0.05);
 }
 const midi = (step) => 60 + 12 * Math.floor(step / 7) + SEMITONES[mod(step, 7)];
+/* ---------- piano real: muestras mp3 en la carpeta sound/ (una por nota natural, p. ej. sound/C4.mp3) ---------- */
+const PIANO_DIR = "sound/";
+const pianoName = (step) => NAMES_EN[mod(step, 7)] + (4 + Math.floor(step / 7));
+const pBuf = new Map(), pLoading = new Map();
+let pFail = 0, pQueue = [], pActive = 0, pVoices = [];
+function pianoSteps(mode) {                         // notas que puede pedir la partida con los ajustes actuales
+  const out = new Set();
+  for (const c of clefsOf(mode)) for (let s = lowStep(c); s <= highStep(c); s++) out.add(s);
+  return [...out];
+}
+function pianoLoad(step) {
+  if (pBuf.has(step) || pLoading.has(step) || pFail > 6) return Promise.resolve(null);
+  const a = audio();
+  if (!a) return Promise.resolve(null);
+  const p = fetch(PIANO_DIR + pianoName(step) + ".mp3")
+    .then((r) => { if (!r.ok) throw new Error("http " + r.status); return r.arrayBuffer(); })
+    .then((ab) => new Promise((res, rej) => { const q = a.decodeAudioData(ab, res, rej); if (q && q.catch) q.catch(rej); }))
+    .then((buf) => { pBuf.set(step, buf); pFail = 0; dirty = true; return buf; })
+    .catch(() => { pFail++; return null; })
+    .then((b) => { pLoading.delete(step); return b; });
+  pLoading.set(step, p);
+  return p;
+}
+function pianoPump() {
+  while (pActive < 3 && pQueue.length) {
+    const s = pQueue.shift();  pActive++;
+    pianoLoad(s).then(() => { pActive--; pianoPump(); });
+  }
+}
+function pianoPreload(steps) {                      // descarga en segundo plano (3 a la vez); se guardan en caché para la próxima vez
+  if (!S.sound || !S.piano || !audio()) return;
+  for (const s of steps) if (!pBuf.has(s) && !pLoading.has(s) && !pQueue.includes(s)) pQueue.push(s);
+  pianoPump();
+}
+function playSample(buf, vol) {
+  const a = audio();
+  if (!a) return;
+  const t = a.currentTime, v = Math.max(0.001, (S.vol / 10) * vol * 1.6);
+  for (const o of pVoices) {                        // la nota anterior se apaga con suavidad
+    try { const g = o.g.gain; g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + 0.25); o.s.stop(t + 0.3); } catch (e) {}
+  }
+  pVoices = [];
+  const s = a.createBufferSource(), g = a.createGain();
+  s.buffer = buf;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.004);
+  g.gain.setValueAtTime(v, t + 2.2);
+  g.gain.linearRampToValueAtTime(0, t + 3.2);       // recorta la cola: las muestras duran ~8 s
+  s.connect(g);  g.connect(a.destination);
+  s.start(t);  s.stop(t + 3.3);
+  const o = { s, g };  pVoices.push(o);
+  s.onended = () => { pVoices = pVoices.filter((x) => x !== o); };
+}
+function pianoStatus() {
+  if (!S.piano) return "Sintetizador";
+  const need = pianoSteps(S.mode), got = need.filter((s) => pBuf.has(s)).length;
+  if (got === need.length) return "Muestras reales cargadas (" + got + ")";
+  if (pFail > 6 && !got) return "Sin muestras: se usa el sintetizador";
+  return "Cargando muestras… " + got + "/" + need.length;
+}
 function playNote(step, vol = 0.5) {
-const f = 440 * Math.pow(2, (midi(step) - 69) / 12);
-tone(f, 1.2, "triangle", vol);
-tone(f * 2, 0.6, "sine", vol * 0.25);
+  if (S.piano && S.sound && S.vol) {
+    const buf = pBuf.get(step);
+    if (buf) { playSample(buf, vol);  return; }
+    pianoPreload([step]);                           // aún no está: suena el sintetizador y se pide para la próxima
+  }
+  const f = 440 * Math.pow(2, (midi(step) - 69) / 12);
+  tone(f, 1.2, "triangle", vol);
+  tone(f * 2, 0.6, "sine", vol * 0.25);
 }
 const playWrong  = () => tone(110, 0.25, "square", 0.18);
 const playStreak = () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.3, "triangle", 0.3, i * 0.08));
@@ -312,6 +379,7 @@ function startSession(review, clefs) {
   if (reviewOn) { const pc = [0, 1].filter((c) => reviewPool.some((p) => p.clef === c)); playMode = pc.length === 2 ? 2 : pc[0]; }
   else playMode = S.mode;
   layout();
+  pianoPreload(pianoSteps(playMode));
   plan = [];
   if (playMode === 2) {
     let c = rand(0, 1);
@@ -443,7 +511,7 @@ return Math.floor(a / seg) % 7;
 function act(id) {
   if (id.startsWith("mode_")) { S.mode = clamp(int(id.slice(5), 0), 0, 2); saveSettings(); startSession(false); return; }
   if (id.startsWith("tf_")) { ST.clef = int(id.slice(3), -1); computeStats(); dirty = true; return; }
-  if (id.startsWith("ln_")) { const p = id.split("_"), n = clamp(int(p[2], 0), 0, 4); if (p[1] === "1") S.lf = n; else S.lg = n; saveSettings(); layout(); dirty = true; return; }
+  if (id.startsWith("ln_")) { const p = id.split("_"), n = clamp(int(p[2], 0), 0, 4); if (p[1] === "1") S.lf = n; else S.lg = n; saveSettings(); layout(); pianoPreload(pianoSteps(S.mode)); dirty = true; return; }
   if (id.startsWith("tp_")) { ST.period = int(id.slice(3), 0); computeStats(); dirty = true; return; }
   switch (id) {
     case "m_play": go("clefs"); return;
@@ -474,6 +542,8 @@ function act(id) {
     case "name_en":  S.es = false; break;
     case "sound_on": S.sound = true;  playNote(5, 0.4); break;
     case "sound_off": S.sound = false; break;
+    case "piano_on":  S.piano = true;  pianoPreload(pianoSteps(S.mode)); playNote(5, 0.4); break;
+    case "piano_off": S.piano = false; break;
     case "vol_-": S.vol = Math.max(0, S.vol - 1);  playNote(5, 0.4); break;
     case "vol_+": S.vol = Math.min(10, S.vol + 1); playNote(5, 0.4); break;
     case "hap_on":  S.haptic = true;  buzz(20); break;
@@ -520,10 +590,12 @@ const rows = [
 { k: "tap", label: "Nombre de las notas", value: S.es ? "Latín (Do, Re, Mi, …)" : "Anglosajón (C, D, E, …)", id: S.es ? "name_en" : "name_es" },
 { k: "sw", label: "Sonido", value: S.sound ? "Habilitado" : "Deshabilitado", on: S.sound, id: S.sound ? "sound_off" : "sound_on" },
 { k: "step", label: "Volumen", value: S.vol + " / 10", minus: "vol_-", plus: "vol_+" },
+{ k: "sw", label: "Piano real", value: pianoStatus(), on: S.piano, id: S.piano ? "piano_off" : "piano_on" },
 { k: "sw", label: "Vibraciones", value: S.haptic ? "Habilitado" : "Deshabilitado", on: S.haptic, id: S.haptic ? "hap_off" : "hap_on" }
 ];
 if (navigator.requestMIDIAccess) rows.push({ k: "sw", label: "Teclado MIDI", value: S.midi ? "Habilitado" : "Deshabilitado", on: S.midi, id: S.midi ? "midi_off" : "midi_on" });
 rows.push({ k: "sw", label: "Práctica adaptativa", value: S.adapt ? "Más práctica en tus notas débiles" : "Notas totalmente al azar", on: S.adapt, id: S.adapt ? "adapt_off" : "adapt_on" });
+if (S.piano) rows.push({ k: "note", label: "Piano: tonejs-instruments (N. Brosowsky), CC BY 3.0" });
 rows.push({ k: "hd", label: "Apariencia" });
 rows.push({ k: "tap", label: "Tema de la aplicación", value: S.skin === 1 ? "Oscuro" : "Clásico", id: S.skin === 1 ? "skin_0" : "skin_1" });
 rows.push({ k: "step", label: "Notas visibles", value: String(S.visible), minus: "vis_-", plus: "vis_+" });
@@ -548,7 +620,7 @@ cv.addEventListener("pointerdown", (e) => {
   buildUI();
   let hb = null;
   for (const b of buttons) if (hit(b, pointer)) { hb = b; break; }
-  if (settingsOpen || scene === "stats" || scene === "summary") {
+  if (settingsOpen || scene === "stats" || scene === "summary" || scene === "clefs") {
     drag = { y0: pointer.y, s0: scrollY, moved: false, id: hb ? hb.id : null, lt: performance.now(), v: 0 };
     scrollV = 0;
     dirty = true;
@@ -590,7 +662,7 @@ cv.addEventListener("pointercancel", (e) => {
   if (e.pointerType !== "mouse") { pointer = { x: -1, y: -1 }; dirty = true; }
 });
 cv.addEventListener("wheel", (e) => {
-  if (!settingsOpen && scene !== "stats" && scene !== "summary") return;
+  if (!settingsOpen && scene !== "stats" && scene !== "summary" && scene !== "clefs") return;
   e.preventDefault();
   scrollY = clamp(scrollY + e.deltaY, 0, maxScroll);
   dirty = true;
@@ -748,7 +820,7 @@ function startTrans(dir) {
     ensureC();
     const g = snapC.getContext("2d");  g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, snapC.width, snapC.height);  g.drawImage(cv, 0, 0);   // foto de la pantalla que se va
-    trans = { dir, t0: performance.now(), dur: 280 };
+    trans = { dir, t0: performance.now(), dur: 170 };
     dirty = true;
   } catch (e) { trans = null; }
 }
@@ -761,7 +833,7 @@ function drawFrame(t) {
   try { draw(t); } finally { ctx = main; }
   const W = cv.width, H = cv.height, e = 1 - Math.pow(1 - p, 3), fwd = trans.dir > 0, k = fwd ? e : 1 - e;
   const under = fwd ? snapC : newC, over = fwd ? newC : snapC;
-  const ux = -0.26 * W * k, ox = fwd ? W * (1 - e) : W * e, dpr = L.dpr || 1;
+  const ux = -0.22 * W * k, ox = fwd ? W * (1 - e) : W * e, dpr = L.dpr || 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0);  ctx.globalAlpha = 1;
   ctx.drawImage(under, ux, 0);
   ctx.fillStyle = "rgba(0,0,0," + (0.35 * k).toFixed(3) + ")";  ctx.fillRect(0, 0, W, H);
@@ -1103,6 +1175,7 @@ function go(s) {
   scene = s;  sceneHits = [];  scrollY = 0;  scrollV = 0;  maxScroll = 0;  drag = null;  finishAt = 0;
   if (changed && trans) trans.dir = depth() >= d0 ? 1 : -1;
   dirty = true;
+  if (s === "clefs") pianoPreload(pianoSteps(S.mode));
   syncHist();  wakeSync();
 }
 const darkUI = () => S.skin === 1 || scene !== "game";
@@ -1270,7 +1343,7 @@ function drawMenu(t) {
 }
 
 /* ---------- elección de clave ---------- */
-function clefCard(id, mode, x, y, w, h) {
+function clefCard(id, mode, x, y, w, h, top) {
   const hov = hoverBtn === id, sel = S.mode === mode;
   ctx.fillStyle = hov ? "rgba(46,211,230,.12)" : AC.card;  rr(x, y, w, h, 12);  ctx.fill();
   ctx.strokeStyle = hov || sel ? AC.cyan : AC.edge;  ctx.lineWidth = sel ? 2 : 1.2;  ctx.stroke();
@@ -1280,40 +1353,51 @@ function clefCard(id, mode, x, y, w, h) {
   if (mode === 0) glyph(G_CLEF, ix + s * 0.4, cy + s, col, 4 * s);
   else if (mode === 1) glyph(F_CLEF, ix + s * 0.4, cy - s, col, 4 * s);
   else { glyph(G_CLEF, ix + s * 0.1, cy + s, col, 4 * s);  glyph(F_CLEF, ix + iw * 0.52, cy - s, col, 4 * s); }
-  const tx = ix + iw + h * 0.13, rEdge = x + w - 38;
-  const hasSel = mode < 2;
-  let lblLeft = rEdge;
-  if (hasSel) {
-    // selector de líneas adicionales (0-4), propio de cada clave
-    const val = mode === 1 ? S.lf : S.lg;
-    const bs = clamp(h * 0.19, 16, 22), pitch = bs + 4, boxesW = 5 * pitch - 4, bx0 = rEdge - boxesW;
-    const lblSz = clamp(h * 0.11, 9.5, 12), lbl = "Líneas adicionales";
-    ctx.font = lblSz + "px system-ui,sans-serif";
-    lblLeft = rEdge - ctx.measureText(lbl).width;
-    text(lbl, rEdge, y + h * 0.58, lblSz, AC.dim, "right");
-    for (let n = 0; n <= 4; n++) {
-      const bx = bx0 + n * pitch, by = y + h * 0.8 - bs / 2, on = val === n;
-      ctx.fillStyle = on ? "rgba(46,211,230,.2)" : "#3b3b3b";  rr(bx, by, bs, bs, 3);  ctx.fill();
-      if (on) { ctx.strokeStyle = AC.cyan;  ctx.lineWidth = 1.2;  ctx.stroke(); }
-      text(String(n), bx + bs / 2, by + bs / 2, bs * 0.62, on ? AC.cyan : "#9a9a9a", "center", on ? "bold" : "");
-      addHit("ln_" + mode + "_" + n, bx - 2, by - 6, pitch, bs + 12);   // antes que la tarjeta: tiene prioridad
-    }
-  }
-  text(MODE_NAME[mode], tx, y + h * 0.32, clamp(h * 0.21, 15, 22), AC.txt, "left", "", x + w - tx - 36);
-  text(["Registro agudo", "Registro grave", "Intercaladas al azar"][mode], tx, y + h * 0.58, clamp(h * 0.15, 11, 14), AC.dim, "left", "", Math.max(40, lblLeft - 8 - tx));
+  const tx = ix + iw + h * 0.13;
+  text(MODE_NAME[mode], tx, y + h * 0.38, clamp(h * 0.23, 15, 22), AC.txt, "left", "", x + w - tx - 40);
+  text(["Registro agudo", "Registro grave", "Intercaladas al azar"][mode], tx, y + h * 0.68, clamp(h * 0.16, 12, 15), AC.dim, "left", "", x + w - tx - 40);
   ctx.strokeStyle = sel || hov ? AC.cyan : "#777";  ctx.lineWidth = 2;  ctx.lineCap = "round";
   ctx.beginPath();  ctx.moveTo(x + w - 26, cy - 8);  ctx.lineTo(x + w - 18, cy);  ctx.lineTo(x + w - 26, cy + 8);  ctx.stroke();
   ctx.lineCap = "butt";
-  addHit(id, x, y, w, h);
+  visHit(id, x, y, w, h, top);
+}
+// los botones solo existen en la parte visible (por debajo de la barra y dentro de la pantalla)
+function visHit(id, x, y, w, h, top) {
+  const y0 = Math.max(y, top), y1 = Math.min(y + h, L.vh);
+  if (y1 > y0) addHit(id, x, y0, w, y1 - y0);
+}
+// selector de líneas adicionales: fila propia, botones grandes y a todo el ancho
+function lineSel(c, x, y, w, top) {
+  const col = clefCol(c), val = c === 1 ? S.lf : S.lg;
+  text("Líneas adicionales", x + 2, y + 9, 13, AC.dim, "left");
+  text("Rango: " + noteLabel(lowStep(c)) + " – " + noteLabel(highStep(c)), x + w - 2, y + 9, 13, col, "right");
+  const by = y + 24, bh = 46, gp = 6, bw = (w - 4 * gp) / 5;
+  for (let n = 0; n <= 4; n++) {
+    const bx = x + n * (bw + gp), on = val === n, id = "ln_" + c + "_" + n;
+    ctx.fillStyle = on ? (c ? "rgba(255,180,84,.2)" : "rgba(46,211,230,.2)") : hoverBtn === id ? "#454545" : "#3b3b3b";
+    rr(bx, by, bw, bh, 10);  ctx.fill();
+    ctx.strokeStyle = on ? col : "#4a4a4a";  ctx.lineWidth = on ? 1.6 : 1;  ctx.stroke();
+    text(String(n), bx + bw / 2, by + bh / 2, 17, on ? col : "#9a9a9a", "center", on ? "bold" : "");
+    visHit(id, bx, by, bw, bh, top);
+  }
 }
 function drawClefs() {
-  const cx = L.cx0 + L.cw / 2, h = L.vh;
+  const cx = L.cx0 + L.cw / 2;
   drawBar("Elige la clave", { back: "back", actions: [{ id: "open", icon: "gear" }] });
-  const topY = L.top + L.barH + L.m * 2, avail = L.bot - L.m - topY;
-  const ch = clamp(Math.min(h * 0.14, avail / 3.4), 52, 108), gap = ch * 0.16;
-  const cw = Math.min(L.cw - L.m * 4, 520), x = cx - cw / 2;
-  let y = topY;
-  for (let m = 0; m < 3; m++) { clefCard("mode_" + m, m, x, y, cw, ch);  y += ch + gap; }
+  const top = L.top + L.barH, w = Math.min(L.cw - L.m * 4, 520), x = cx - w / 2;
+  const ch = clamp(L.vh * 0.115, 56, 92), grp = 20;
+  let y = top + L.m * 1.5 - scrollY;
+  clipRect(0, top, L.vw, L.vh - top);
+  for (let m = 0; m < 3; m++) {
+    clefCard("mode_" + m, m, x, y, w, ch, top);
+    y += ch;
+    if (m < 2) { y += 10;  lineSel(m, x, y, w, top);  y += 24 + 46; }
+    else { text("Usa las líneas adicionales de sol y de fa.", x + 2, y + 14, 12, AC.dim, "left");  y += 22; }
+    y += grp;
+  }
+  ctx.restore();
+  maxScroll = Math.max(0, y + scrollY - grp - L.bot + L.m);
+  if (scrollY > maxScroll) { scrollY = maxScroll;  dirty = true; }
 }
 
 /* ---------- resumen de sesión ---------- */
