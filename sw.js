@@ -1,7 +1,7 @@
 /* ReadNotes – service worker (funciona sin conexión)
    Cambia VERSION en cada publicación: así los móviles detectan la nueva versión
    y muestran el aviso "Nueva versión disponible". */
-const VERSION = "1.0.15";
+const VERSION = "1.0.16";
 const CACHE = "readnotes-" + VERSION;
 const SOUND = "readnotes-sound";            // muestras de piano: se conservan entre versiones
 const ASSETS = [

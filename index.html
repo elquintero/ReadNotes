@@ -46,7 +46,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.0.15", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.0.16", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -54,7 +54,7 @@ const AC = {
 };
 const clefCol = (c) => (c === 1 ? AC.amber : AC.cyan);
 const C = {
-bg: "#141721",   ink: "#1a1a21",  paper: "#f5f0e0", ui: "#edf0f7",
+bg: "#141721",   ink: "#111111",  paper: "#ffffff", ui: "#edf0f7",
 cur: "#1a61eb",  ok: "#149440",   bad: "#d92626",
 gold: "#ffd966", dim: "#b3bfd9",  btn: "#33384d",   btnOn: "#4073d9", line: "#808cb3"
 };
@@ -147,9 +147,7 @@ const ext = extents(), total = ext.up + ext.down;
 const geo = noteGeometry();
 const msgH = clamp(Math.round(vh * 0.06), 28, 44);
 const barH = clamp(Math.round(vh * 0.075), 50, 60);
-const hh = S.skin === 1 ? barH + Math.round(fs * 2.3)
-  : land ? barH + Math.round(fs * 2.3)
-  : barH + Math.round(m * 0.4 + titleFs * 1.2 + fs * 2.9 + m * 0.5);
+const hh = barH + Math.round(fs * 2.3);
 let sp, paper, wheelD, wheelCx, wheelCy, msgX, msgY, ringR = null;
 if (!land) {
 const innerW = cw - 2 * m;
@@ -486,7 +484,6 @@ function submit(idx) {
     curShownAt = now;  curBad = 0;
     playNote(c.step);
     buzz(12);
-    if (streak % 10 === 0) playStreak();
     const nxt = notes.find((n) => n.state === 0);
     const shift = nxt ? nxt.tslot : 1;
     for (const n of notes) n.tslot -= shift;
@@ -606,7 +603,8 @@ if (deferredInstall || updReady) rows.push({ k: "hd", label: "Aplicación" });
 if (deferredInstall) rows.push({ k: "tap", label: "Instalar app", value: "Añádela a tu pantalla de inicio o escritorio", id: "install" });
 if (updReady) rows.push({ k: "tap", label: "Nueva versión disponible", value: "Toca para actualizar ahora", id: "update" });
 rows.push({ k: "hd", label: "Créditos" });
-rows.push({ k: "note", label: "Piano: tonejs-instruments (N. Brosowsky), CC BY 3.0" });
+rows.push({ k: "note", tight: true, small: true, label: "Diseño y Desarrollado por:  ElQuintero" });
+rows.push({ k: "note", tight: true, label: "Piano: tonejs-instruments (N. Brosowsky), CC BY 3.0" });
 return rows;
 }
 // los botones salen de lo que se dibuja (cada pantalla los registra con addHit)
@@ -984,15 +982,13 @@ ctx.globalAlpha = 1;
 ctx.restore();
 }
 function drawMessage() {
-const my = L.msgY + L.msgH * 0.3, dk = S.skin === 1;
+const my = L.msgY + L.msgH * 0.3, dk = true;
 if (settingsOpen) return;
 if (msgT > 0) {
 ctx.globalAlpha = Math.min(1, msgT * 2);
 text(msg, L.msgX, my, dk ? clamp(L.msgH * 0.5, 13, 22) : clamp(L.msgH * 0.62, 16, 28),
   dk ? (msgOk ? "#86a58f" : "#b28b8b") : (msgOk ? "#66f280" : "#ff7373"), "center", dk ? "" : "bold", L.paper.w);
 ctx.globalAlpha = 1;
-} else if (okCount + badCount === 0 && S.skin !== 1) {
-text("Toca en el círculo el nombre de la nota azul", L.msgX, my, clamp(L.msgH * 0.5, 13, 20), C.dim, "center", "", L.paper.w);
 }
 }
 function drawWheel() {
@@ -1001,8 +997,8 @@ const w = L.wheel, seg = (Math.PI * 2) / 7, gap = 0.025;
 for (let i = 0; i < 7; i++) {
 const mid = -Math.PI / 2 + i * seg;
 const a0 = mid - seg / 2 + gap, a1 = mid + seg / 2 - gap;
-let col = i === hoverIdx ? hsv(i / 7, 0.35, 0.85) : hsv(i / 7, 0.45, 0.55);
-if (i === flashIdx && flashT > 0) col = flashOk ? "rgb(51,204,77)" : "rgb(230,64,64)";
+let col = i === hoverIdx ? "#484848" : "#363636";
+if (i === flashIdx && flashT > 0) col = flashOk ? "#2f9e5a" : "#c24b4b";
 ctx.fillStyle = col;
 ctx.beginPath();
 ctx.arc(w.cx, w.cy, w.rOut, a0, a1);
@@ -1011,12 +1007,10 @@ ctx.closePath();
 ctx.fill();
 const r = (w.rIn + w.rOut) / 2;
 text(nameOf(i), w.cx + Math.cos(mid) * r, w.cy + Math.sin(mid) * r,
-clamp(w.rOut * 0.17, 14, 40), "#fff", "center", "bold");
+clamp(w.rOut * 0.17, 14, 40), "#e6e6e6", "center", "bold");
 }
-ctx.fillStyle = "#242938";
+ctx.fillStyle = AC.bg;
 ctx.beginPath();  ctx.arc(w.cx, w.cy, w.rIn - w.rOut * 0.03, 0, Math.PI * 2);  ctx.fill();
-text(String(streak), w.cx, w.cy - w.rIn * 0.1, w.rIn * 0.6, C.gold, "center", "bold");
-text("racha", w.cx, w.cy + w.rIn * 0.42, Math.max(10, w.rIn * 0.24), C.dim, "center");
 }
 function drawHeaderDark() {
 const fs = clamp(L.fs * 0.92, 11, 16), y = L.top + L.barH + L.fs * 1.15;
@@ -1130,12 +1124,13 @@ function drawSettings() {
   clipRect(0, top, L.vw, L.vh - top);
   let y = top + 4 - scrollY, content = 4;
   rows.forEach((r, i) => {
-    const h = r.k === "hd" ? hdH : r.k === "note" ? ntH : rowH;
+    const h = r.k === "hd" ? hdH : r.k === "note" ? (r.tight ? Math.round(rowH * 0.46) : ntH) : rowH;
     if (y + h > top && y < L.vh) {
       if (r.k === "hd") {
         text(r.label, x + pad, y + h * 0.66, clamp(rowH * 0.23, 13, 17), AC.dim, "left");
       } else if (r.k === "note") {
-        text(r.label, x + w / 2, y + h / 2, clamp(L.fs, 11, 15), "#6f6f6f", "center", "", w - 24);
+        if (r.tight) text(r.label, x + pad + 8, y + h / 2, r.small ? clamp(L.fs * 0.78, 10, 13) : clamp(L.fs * 0.95, 11, 15), r.small ? "#8d8d8d" : "#6f6f6f", "left", "", w - pad * 2 - 8);
+        else text(r.label, x + w / 2, y + h / 2, clamp(L.fs, 11, 15), "#6f6f6f", "center", "", w - 24);
       } else {
         const bw = clamp(rowH * 0.55, 36, 46), bh2 = bw * 0.85;
         const ctrlW = r.k === "step" ? bw * 2 + 10 : 46, mw = w - pad * 2 - ctrlW - 12;
@@ -1632,9 +1627,10 @@ ctx.setTransform(L.dpr, 0, 0, L.dpr, 0, 0);
 sceneHits = [];
 if (settingsOpen) { drawSettings(); return; }
 if (scene === "game") {
-ctx.fillStyle = S.skin === 1 ? "#212121" : C.bg;  ctx.fillRect(0, 0, L.vw, L.vh);
+ctx.fillStyle = AC.bg;  ctx.fillRect(0, 0, L.vw, L.vh);
 drawBar(reviewOn ? "Repasar fallos" : MODE_NAME[playMode], { back: "back", actions: [{ id: "reset", icon: "reset" }, { id: "open", icon: "gear" }] });
-if (S.skin === 1) drawHeaderDark(); else { drawHeader(); drawPaper(); }
+drawHeaderDark();
+if (S.skin !== 1) drawPaper();
 drawStaff();
 drawNotes();
 drawMessage();
