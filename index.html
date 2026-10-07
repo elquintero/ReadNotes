@@ -47,17 +47,17 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.0.19", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.0.20", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
-  cyan: "#2ed3e6", acc: "#2a6f86", accV: "#2a6f86", accT: "#62b0c9", accH: "#3a87a1", accBg: "#1d3b46", accP: "#2a6f86", onAcc: "#ffffff", onBar: "#eaf6f9", fa: "#ffb454", amber: "#ffb454", ok: "#4ade80", mid: "#f5c542", bad: "#ff6b6b", bar: "#2a6f86"
+  cyan: "#2ed3e6", acc: "#2a6f86", accV: "#2a6f86", accT: "#62b0c9", accH: "#3a87a1", accBg: "#1d3b46", accP: "#2a6f86", onAcc: "#ffffff", onBar: "#eaf6f9", fa: "#ffb454", amber: "#ffb454", fail: "#b45a5a", ok: "#4ade80", mid: "#f5c542", bad: "#ff6b6b", bar: "#2a6f86"
 };
 const clefCol = (c) => (c === 1 ? AC.fa : AC.accV);      // color de la clave en formas y gráficos
 const clefTxt = (c) => (c === 1 ? AC.fa : AC.accT);     // variante clara para texto sobre fondo oscuro
 const C = {
 bg: "#141721",   ink: "#111111",  paper: "#ffffff", ui: "#edf0f7",
-cur: "#1a61eb",  ok: "#149440",   bad: "#d92626",
+cur: "#1a61eb",  ok: "#149440",   bad: "#b04848",
 gold: "#ffd966", dim: "#b3bfd9",  btn: "#33384d",   btnOn: "#4073d9", line: "#808cb3"
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1052,7 +1052,7 @@ for (let i = 0; i < 7; i++) {
 const mid = -Math.PI / 2 + i * seg;
 const a0 = mid - seg / 2 + gap, a1 = mid + seg / 2 - gap;
 let col = i === hoverIdx ? "#484848" : "#363636";
-if (i === flashIdx && flashT > 0) col = flashOk ? "#2f9e5a" : "#c24b4b";
+if (i === flashIdx && flashT > 0) col = flashOk ? "#2f9e5a" : AC.fail;
 ctx.fillStyle = col;
 ctx.beginPath();
 ctx.arc(w.cx, w.cy, w.rOut, a0, a1);
@@ -1088,7 +1088,7 @@ ctx.beginPath();  ctx.arc(w.cx, w.cy, R, mid + g, mid + seg - g);  ctx.stroke();
 for (let i = 0; i < 7; i++) {
 const mid = -Math.PI / 2 + i * seg;
 let col = i === hoverIdx ? "#ffffff" : "#d6d6d6";
-if (i === flashIdx && flashT > 0) col = flashOk ? "#4ade80" : "#ff6b6b";
+if (i === flashIdx && flashT > 0) col = flashOk ? "#4ade80" : AC.fail;
 text(nameOf(i), w.cx + Math.cos(mid) * R, w.cy + Math.sin(mid) * R, clamp(R * 0.18, 14, 44), col, "center");
 }
 }
@@ -1176,10 +1176,9 @@ function drawSettings() {
     if (y1 > y0) addHit(id, rx, y0, rw, y1 - y0);
   };
   // selector de color: una fila de círculos grandes; si no cupieran cómodos, dos filas
-  const swGap = 10, availW = w - pad * 2, nAcc = ACCENTS.length;
-  let per = nAcc, sd = Math.min(60, (availW - swGap * (nAcc - 1)) / nAcc);
-  if (sd < 32) { per = Math.ceil(nAcc / 2); sd = Math.min(60, (availW - swGap * (per - 1)) / per); }
-  const swRows = per === nAcc ? 1 : 2, colorsH = Math.round(rowH * 0.46) + swRows * sd + (swRows - 1) * swGap + 16;
+  const availW = w - pad * 2, nAcc = ACCENTS.length, per = nAcc;
+  const sd = clamp((availW - 4 * 14) / nAcc, 28, 40), swGap = Math.min(28, (availW - nAcc * sd) / (nAcc - 1));
+  const colorsH = Math.round(rowH * 0.46) + 8 + sd + 22;
   clipRect(0, top, L.vw, L.vh - top);
   let y = top + 4 - scrollY, content = 4;
   rows.forEach((r, i) => {
@@ -1190,7 +1189,7 @@ function drawSettings() {
       } else if (r.k === "colors") {
         text(r.label, x + pad, y + Math.round(rowH * 0.3), clamp(rowH * 0.28, 16, 22), "#e6e6e6", "left");
         text(ACCENTS[S.accent][0], x + w - pad, y + Math.round(rowH * 0.3), clamp(rowH * 0.22, 13, 17), AC.dim, "right");
-        const y0 = y + Math.round(rowH * 0.46);
+        const y0 = y + Math.round(rowH * 0.46) + 8;     // separado del título para que el aro de selección no lo toque
         ACCENTS.forEach((a, k) => {
           const cx = x + pad + sd / 2 + (k % per) * (sd + swGap), cy = y0 + sd / 2 + Math.floor(k / per) * (sd + swGap);
           ctx.fillStyle = a[1];  ctx.beginPath();  ctx.arc(cx, cy, sd / 2, 0, Math.PI * 2);  ctx.fill();
