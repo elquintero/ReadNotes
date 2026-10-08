@@ -48,6 +48,12 @@
       "titulo": "Pirates Of The Carribean",
       "autor": "Deepak",
       "archivo": "piratesofthecarribean.mxl"
+    },
+    {
+      "id": "SquidGameSeason2",
+      "titulo": "Squid Game Season 2",
+      "autor": "Round and Round",
+      "archivo": "SquidGameSeason2.mxl"
     }
   ]
 }
