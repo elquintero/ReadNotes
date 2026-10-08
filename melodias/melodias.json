@@ -14,6 +14,30 @@
       "archivo": "estrellita.mxl"
     },
     {
+      "id": "escala-do",
+      "titulo": "Escala de Do mayor",
+      "autor": "Ejercicio",
+      "archivo": "escala-do.mxl"
+    },
+    {
+      "id": "hermano-juan",
+      "titulo": "Hermano Juan (Frère Jacques)",
+      "autor": "Tradicional",
+      "archivo": "hermano-juan.mxl"
+    },
+    {
+      "id": "claro-de-luna",
+      "titulo": "Al claro de la luna",
+      "autor": "Tradicional",
+      "archivo": "claro-de-luna.mxl"
+    },
+    {
+      "id": "jingle-bells",
+      "titulo": "Jingle Bells (estribillo)",
+      "autor": "J. Pierpont",
+      "archivo": "jingle-bells.mxl"
+    },
+    {
       "id": "nokiatune",
       "titulo": "Nokia Ringtone",
       "autor": "Francisco Tárrega",
