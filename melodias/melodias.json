@@ -12,6 +12,12 @@
       "titulo": "Estrellita, ¿dónde estás?",
       "autor": "Tradicional",
       "archivo": "estrellita.mxl"
+    },
+    {
+      "id": "pamulinawen",
+      "titulo": "Pamulinawen, ¿dónde estás?",
+      "autor": "Marc Yhuri",
+      "archivo": "pamulinawen.mxl"
     }
   ]
 }
