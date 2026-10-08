@@ -30,6 +30,12 @@
       "titulo": "Rattle the Cash",
       "autor": "English Jigs",
       "archivo": "rattlethecash.mxl"
+    },
+    {
+      "id": "Susanna",
+      "titulo": "Oh! Susanna",
+      "autor": "Stephen Foster",
+      "archivo": "ohsusanna.mxl"
     }
   ]
 }
