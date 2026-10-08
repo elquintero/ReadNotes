@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.1.0", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.1.1", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -142,6 +142,7 @@ S.sound  = raw.sound !== false;
 S.piano  = raw.piano !== false;
 S.vol    = clamp(int(raw.vol, 7), 0, 10);
 S.haptic = raw.haptic !== false;
+S.melHold = raw.melHold !== false;
   S.skin = raw.skin === 1 ? 1 : 0;
   S.accent = int(raw.accent, 0) >= 0 && int(raw.accent, 0) < ACCENTS.length ? int(raw.accent, 0) : 0;   // un color guardado que ya no existe vuelve al primero
 S.midi = raw.midi === true;
@@ -665,6 +666,8 @@ function act(id) {
     case "vol_+": S.vol = Math.min(10, S.vol + 1); playNote(5, 0.4); break;
     case "hap_on":  S.haptic = true;  buzz(20); break;
     case "hap_off": S.haptic = false; break;
+    case "mh_on":  S.melHold = true;  break;
+    case "mh_off": S.melHold = false; break;
     case "adapt_on":  S.adapt = true;  break;
     case "adapt_off": S.adapt = false; break;
   }
@@ -715,7 +718,8 @@ const rows = [
 { k: "sw", label: "Sonido", value: S.sound ? "Habilitado" : "Deshabilitado", on: S.sound, id: S.sound ? "sound_off" : "sound_on" },
 { k: "step", label: "Volumen", value: S.vol + " / 10", minus: "vol_-", plus: "vol_+" },
 { k: "sw", label: "Piano real", value: pianoStatus(), on: S.piano, id: S.piano ? "piano_off" : "piano_on" },
-{ k: "sw", label: "Vibraciones", value: S.haptic ? "Habilitado" : "Deshabilitado", on: S.haptic, id: S.haptic ? "hap_off" : "hap_on" }
+{ k: "sw", label: "Vibraciones", value: S.haptic ? "Habilitado" : "Deshabilitado", on: S.haptic, id: S.haptic ? "hap_off" : "hap_on" },
+{ k: "sw", label: "Mantener notas en melodías", value: S.melHold ? "Mantén cada nota lo que dura" : "Un toque basta para avanzar", on: S.melHold, id: S.melHold ? "mh_off" : "mh_on" }
 ];
 if (navigator.requestMIDIAccess) rows.push({ k: "sw", label: "Teclado MIDI", value: S.midi ? "Habilitado" : "Deshabilitado", on: S.midi, id: S.midi ? "midi_off" : "midi_on" });
 rows.push({ k: "sw", label: "Práctica adaptativa", value: S.adapt ? "Más práctica en tus notas débiles" : "Notas totalmente al azar", on: S.adapt, id: S.adapt ? "adapt_off" : "adapt_on" });
@@ -1001,6 +1005,8 @@ if (!navigator.requestMIDIAccess) return;
 navigator.requestMIDIAccess().then((a) => { midiAccess = a; a.onstatechange = bindMidi; bindMidi(); }).catch(() => {});
 }
 document.addEventListener("contextmenu", (e) => e.preventDefault());
+// Android vibra por sí solo en una pulsación larga: se evita en las melodías (no afecta a la opción de vibraciones)
+for (const ev of ["touchstart", "touchmove"]) cv.addEventListener(ev, (e) => { if (scene === "game" && playMode === 5 && !settingsOpen) e.preventDefault(); }, { passive: false });
 document.addEventListener("gesturestart", (e) => e.preventDefault());
 function hsv(h, s, v) {
 const f = (n) => { const k = (n + h * 6) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
@@ -1395,7 +1401,7 @@ let mel = null, hold = null, melDone = false, melHoldMs = 0;
 let melList = null, melState = "idle", melErr = "", melBusy = -1;
 const SN = () => (playMode === 5 && mel ? mel.notes.length : SESSION_N);
 const melSec = (beats) => (beats * 60) / mel.bpm;
-const melNeed = (n) => Math.max(0, MEL_HOLD * melSec(n.beats) - MEL_GRACE);
+const melNeed = (n) => (S.melHold ? Math.max(0, MEL_HOLD * melSec(n.beats) - MEL_GRACE) : 0);
 
 /* ---------- lista de canciones ---------- */
 async function loadMelList(force) {
@@ -1536,7 +1542,7 @@ function startMelody(song) {
   curShownAt = performance.now();
   pauseStart = settingsOpen ? curShownAt : null;
   go("game");
-  msg = "Mantén pulsada cada nota lo que dura";  msgOk = true;  msgT = 3.5;
+  msg = S.melHold ? "Mantén pulsada cada nota lo que dura" : "Toca las notas de la canción";  msgOk = true;  msgT = 3.5;
 }
 // pulsación: la nota correcta se mantiene el tiempo que dura (la blanca más que la negra)
 function melPress(idx) {
