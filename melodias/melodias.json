@@ -40,8 +40,14 @@
     {
       "id": "Spring",
       "titulo": "Spring from the Four",
-      "autor": "SAntonio Vivaldi",
+      "autor": "Antonio Vivaldi",
       "archivo": "springfromthefour.mxl"
+    },
+    {
+      "id": "piratesofthecarribean",
+      "titulo": "Pirates Of The Carribean",
+      "autor": "Deepak",
+      "archivo": "piratesofthecarribean.mxl"
     }
   ]
 }
