@@ -24,6 +24,12 @@
       "titulo": "Prelude Final Fantasy",
       "autor": "Nobuo Uematsu",
       "archivo": "PreludeFinalFantasy.mxl"
+    },
+    {
+      "id": "rattlethecash",
+      "titulo": "Rattle the Cash",
+      "autor": "English Jigs",
+      "archivo": "rattlethecash.mxl"
     }
   ]
 }
