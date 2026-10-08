@@ -32,9 +32,18 @@ position: fixed; visibility: hidden; pointer-events: none;
 padding: env(safe-area-inset-top) env(safe-area-inset-right)
 env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
+#splash { position: fixed; inset: 0; z-index: 50; background: #212121; display: flex; align-items: center; justify-content: center; transition: opacity .35s ease; }
+#splash.off { opacity: 0; pointer-events: none; }
+#splashBox { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 24px; width: min(78vw, 300px); }
+#splashLogo { width: 112px; height: 112px; border-radius: 24px; box-shadow: 0 8px 28px rgba(0,0,0,.45); }
+#splashName { font: 600 26px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #e6e6e6; letter-spacing: .3px; }
+#splashBar { width: 100%; height: 6px; border-radius: 3px; background: #3a3a3a; overflow: hidden; }
+#splashFill { display: block; height: 100%; width: 8%; background: #2a6f86; border-radius: 3px; transition: width .3s ease; }
+#splashMsg { font: 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #8d8d8d; min-height: 16px; text-align: center; }
 </style>
 </head>
 <body>
+<div id="splash"><div id="splashBox"><img id="splashLogo" src="icons/icon-192.png" alt="" width="112" height="112"><div id="splashName">ReadNotes</div><div id="splashBar"><i id="splashFill"></i></div><div id="splashMsg">Cargando…</div></div></div>
 <canvas id="c"></canvas>
 <div id="safe"></div>
 <script>
@@ -47,8 +56,8 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.0.20", SESSION_N = 32, CLEF_GAP = 0.55;
-const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas"];
+const APP_NAME = "ReadNotes", APP_VER = "1.0.21", SESSION_N = 32, CLEF_GAP = 0.55;
+const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
   cyan: "#2ed3e6", acc: "#2a6f86", accV: "#2a6f86", accT: "#62b0c9", accH: "#3a87a1", accBg: "#1d3b46", accP: "#2a6f86", onAcc: "#ffffff", onBar: "#eaf6f9", fa: "#ffb454", amber: "#ffb454", fail: "#b45a5a", ok: "#4ade80", mid: "#f5c542", bad: "#ff6b6b", bar: "#2a6f86"
@@ -65,7 +74,7 @@ const int   = (v, d) => (Number.isFinite(+v) ? Math.round(+v) : d);
 const mod   = (a, n) => ((a % n) + n) % n;
 const rand  = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 /* ---------- COLOR DE ACENTO: 10 colores elegibles; todo lo demás se deriva del elegido ---------- */
-const ACCENTS = [["Azul acero", "#2a6f86"], ["Turquesa", "#12a89c"], ["Frambuesa", "#d6456c"], ["Verde", "#6aaf3d"], ["Rosa", "#f08bc8"]];
+const ACCENTS = [["Azul acero", "#2a6f86"], ["Turquesa", "#12a89c"], ["Frambuesa", "#d6456c"], ["Verde", "#6aaf3d"], ["Rosa", "#f08bc8"], ["Negro", "#000000"]];
 const hex2rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgb2hex = (r, g, b) => "#" + [r, g, b].map((v) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, "0")).join("");
 const mixHex = (a, b, t) => { const A = hex2rgb(a), B = hex2rgb(b); return rgb2hex(A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t); };
@@ -116,13 +125,15 @@ haptic: true,
 midi: false,
 skin: 0,
 accent: 0,
+klv: [0, 0],
 adapt: true,
 rec: 0
 };
 function loadSettings() {
 try {
 const raw = JSON.parse(localStorage.getItem("mrt") || "{}");
-S.mode   = clamp(int(raw.mode, 0), 0, 2);
+S.mode   = clamp(int(raw.mode, 0), 0, 4);
+  S.klv    = [0, 1].map((i) => clamp(int(Array.isArray(raw.klv) ? raw.klv[i] : 0, 0), 0, KEY_LEVELS.length - 1));
 S.lg = clamp(int(raw.lg !== undefined ? raw.lg : raw.above, 1), 0, 4);
 S.lf = clamp(int(raw.lf !== undefined ? raw.lf : raw.above, 1), 0, 4);
 S.visible = clamp(int(raw.visible, 6), 3, 8);
@@ -157,12 +168,12 @@ b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0
 };
 }
 function noteGeometry() {
-const n = S.visible;
-const first = S.skin === 1 ? 9.4 : 5.3;
+const n = curKey ? Math.min(S.visible, 5) : S.visible, ks = curKey ? curKey.w : 0;     // la armadura ocupa sitio entre la clave y las notas
+const first = (S.skin === 1 ? 9.4 : 5.3) + ks;
 const gap = S.skin === 1 ? 3.3 : (n <= 4 ? 3.4 : 3.0);
-return { first, gap, fit: first + (n - 1) * gap + (S.skin === 1 ? 4 : 2.3) };
+return { first, gap, ks, fit: first + (n - 1) * gap + (S.skin === 1 ? 4 : 2.3) };
 }
-const extraLines = () => (playMode === 0 ? S.lg : playMode === 1 ? S.lf : Math.max(S.lg, S.lf));
+const extraLines = () => Math.max(...clefsOf(playMode).map((c) => linesOf(c)));
 function extents() {
 return {
 up:   Math.max(4.5 + extraLines(), 4.9) + 1.0,
@@ -221,7 +232,7 @@ msgX = paper.x + paper.w / 2;  msgY = paper.y + paper.h + msgH / 2;
 wheelCx = cx0 + cw - m - wheelD / 2;
 wheelCy = top + hh + ((bot - top) - hh) / 2;
 }
-if (S.skin === 1) {
+if (S.skin === 1 || curKey) {
   if (!land) {
     const t2 = paper.y + paper.h + msgH;
     ringR = Math.max(40, Math.min(cw * 0.375, (bot - t2 - m) / 2 * 0.8));
@@ -234,12 +245,12 @@ vw, vh, dpr, land, cw, cx0, top, bot, m, btnH, fs, titleFs, hh, barH, msgH, sp, 
 x0: paper.x + 0.5 * sp,
 x1: paper.x + paper.w - 0.5 * sp,
 bottomY: paper.y + ext.up * sp,
-wheel: S.skin === 1 ? { cx: wheelCx, cy: wheelCy, rOut: ringR * 1.22, rIn: ringR * 0.2, ring: ringR }
+wheel: (S.skin === 1 || curKey) ? { cx: wheelCx, cy: wheelCy, rOut: ringR * 1.22, rIn: ringR * 0.2, ring: ringR }
     : { cx: wheelCx, cy: wheelCy, rOut: wheelD / 2, rIn: wheelD / 2 * 0.33 },
 msgX, msgY,
 btnW: clamp(cw * 0.26, 86, 130)
 };
-L.leftLimit = L.x0 + 3.2 * sp;
+L.leftLimit = L.x0 + (3.2 + geo.ks) * sp;
 L.curX      = L.x0 + geo.first * sp;
 L.gap       = geo.gap * sp;
 }
@@ -265,29 +276,34 @@ osc.connect(g);  g.connect(a.destination);
 osc.start(t);  osc.stop(t + dur + 0.05);
 }
 const midi = (step) => 60 + 12 * Math.floor(step / 7) + SEMITONES[mod(step, 7)];
-/* ---------- piano real: muestras mp3 en la carpeta sound/ (una por nota natural, p. ej. sound/C4.mp3) ---------- */
+/* ---------- piano real: muestras mp3 en la carpeta Sound/ (una por semitono: Sound/C4.mp3, Sound/Cs4.mp3 = Do♯4...) ---------- */
 const PIANO_DIRS = ["Sound/", "sound/"];
 let pDir = 0;
-const pianoName = (step) => NAMES_EN[mod(step, 7)] + (4 + Math.floor(step / 7));
-const pBuf = new Map(), pLoading = new Map();
+const SEMI_NAMES = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
+const pianoName = (m) => SEMI_NAMES[m % 12] + (Math.floor(m / 12) - 1);       // número MIDI -> nombre de archivo (60 -> C4, 70 -> As4)
+const isBlackKey = (m) => SEMI_NAMES[m % 12].length > 1;
+const pBuf = new Map(), pLoading = new Map(), pMiss = new Set();                // muestras por nº MIDI · descargas en curso · semitonos que no existen en Sound/
 let pFail = 0, pQueue = [], pActive = 0, pVoices = [];
-function pianoSteps(mode) {                         // notas que puede pedir la partida con los ajustes actuales
+function pianoMidis(mode, key) {                    // notas (MIDI) que puede pedir la partida; con armadura se añaden los semitonos alterados
   const out = new Set();
-  for (const c of clefsOf(mode)) for (let s = lowStep(c); s <= highStep(c); s++) out.add(s);
-  return [...out];
+  for (const c of clefsOf(mode)) for (let s = lowStep(c); s <= highStep(c); s++) {
+    out.add(midi(s));
+    if (key && key.acc[mod(s, 7)]) out.add(midi(s) + key.acc[mod(s, 7)]);
+  }
+  return [...out].sort((x, y) => x - y);
 }
-function pianoLoad(step) {
-  if (pBuf.has(step) || pLoading.has(step) || pFail > 6) return Promise.resolve(null);
+function pianoLoad(m) {
+  if (pBuf.has(m) || pLoading.has(m) || pMiss.has(m) || pFail > 6) return Promise.resolve(null);
   const a = audio();
   if (!a) return Promise.resolve(null);
-  const name = pianoName(step), order = [pDir, 1 - pDir];
+  const name = pianoName(m), order = [pDir, 1 - pDir];
   const one = (k) => fetch(PIANO_DIRS[order[k]] + name + ".mp3").then((r) => { if (!r.ok) throw new Error("http " + r.status); pDir = order[k]; return r.arrayBuffer(); });
   const p = one(0).catch(() => one(1))
     .then((ab) => new Promise((res, rej) => { const q = a.decodeAudioData(ab, res, rej); if (q && q.catch) q.catch(rej); }))
-    .then((buf) => { pBuf.set(step, buf); pFail = 0; dirty = true; return buf; })
-    .catch(() => { pFail++; return null; })
-    .then((b) => { pLoading.delete(step); return b; });
-  pLoading.set(step, p);
+    .then((buf) => { pBuf.set(m, buf); pFail = 0; dirty = true; return buf; })
+    .catch(() => { if (isBlackKey(m)) pMiss.add(m); else pFail++; return null; })     // un semitono que falta no bloquea las demás descargas
+    .then((x) => { pLoading.delete(m); return x; });
+  pLoading.set(m, p);
   return p;
 }
 function pianoPump() {
@@ -296,12 +312,12 @@ function pianoPump() {
     pianoLoad(s).then(() => { pActive--; pianoPump(); });
   }
 }
-function pianoPreload(steps) {                      // descarga en segundo plano (3 a la vez); se guardan en caché para la próxima vez
+function pianoPreload(ms) {                         // descarga en segundo plano (3 a la vez); se guardan en caché para la próxima vez
   if (!S.sound || !S.piano || !audio()) return;
-  for (const s of steps) if (!pBuf.has(s) && !pLoading.has(s) && !pQueue.includes(s)) pQueue.push(s);
+  for (const s of ms) if (!pBuf.has(s) && !pLoading.has(s) && !pMiss.has(s) && !pQueue.includes(s)) pQueue.push(s);
   pianoPump();
 }
-function playSample(buf, vol) {
+function playSample(buf, vol, rate = 1) {           // rate != 1: muestra transpuesta (semitono vecino) si falta el archivo propio
   const a = audio();
   if (!a) return;
   const t = a.currentTime, v = Math.max(0.001, (S.vol / 10) * vol * 1.6);
@@ -311,6 +327,7 @@ function playSample(buf, vol) {
   pVoices = [];
   const s = a.createBufferSource(), g = a.createGain();
   s.buffer = buf;
+  if (rate !== 1) s.playbackRate.value = rate;
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(v, t + 0.004);
   g.gain.setValueAtTime(v, t + 2.2);
@@ -322,19 +339,25 @@ function playSample(buf, vol) {
 }
 function pianoStatus() {
   if (!S.piano) return "Sintetizador";
-  const need = pianoSteps(S.mode), got = need.filter((s) => pBuf.has(s)).length;
-  const cnt = "Bajados " + got + "/" + need.length;
-  if (got === need.length) return cnt;
+  const need = pianoMidis(S.mode, isKeyMode(S.mode) ? keyOf(S.mode - 3, S.klv[S.mode - 3]) : null);
+  const got = need.filter((m) => pBuf.has(m)).length, miss = need.filter((m) => pMiss.has(m)).length;
+  let cnt = "Bajados " + got + "/" + need.length;
+  if (miss) cnt += " · faltan " + miss + " semitonos en Sound";
+  if (got + miss >= need.length) return cnt;
   if (pFail > 6) return cnt + " · faltan archivos en Sound";
   return cnt + "…";
 }
-function playNote(step, vol = 0.5) {
+function playNote(step, vol = 0.5, acc = 0) {
+  const m = midi(step) + acc;
   if (S.piano && S.sound && S.vol) {
-    const buf = pBuf.get(step);
+    const buf = pBuf.get(m);
     if (buf) { playSample(buf, vol);  return; }
-    pianoPreload([step]);                           // aún no está: suena el sintetizador y se pide para la próxima
+    if (!pMiss.has(m)) pianoPreload([m]);           // aún no está: se pide para la próxima vez
+    const lo = pBuf.get(m - 1), hi = pBuf.get(m + 1);
+    if (lo) { playSample(lo, vol, Math.pow(2, 1 / 12));  return; }       // mientras tanto, la del semitono vecino transpuesta
+    if (hi) { playSample(hi, vol, Math.pow(2, -1 / 12));  return; }
   }
-  const f = 440 * Math.pow(2, (midi(step) - 69) / 12);
+  const f = 440 * Math.pow(2, (m - 69) / 12);
   tone(f, 1.2, "triangle", vol);
   tone(f * 2, 0.6, "sine", vol * 0.25);
 }
@@ -355,7 +378,26 @@ let msg = "", msgT = 0, msgOk = true;
 /* ---------- práctica adaptativa y repaso de fallos ---------- */
 const WEAK_W = 1.8;
 let playMode = 0, reviewOn = false, reviewClefs = [0, 1], reviewPool = [], wmap = new Map();
-const clefsOf = (m) => (m === 2 ? [0, 1] : [m]);
+const clefsOf = (m) => (m === 2 ? [0, 1] : m === 3 ? [0] : m === 4 ? [1] : [m]);
+/* ---------- ARMADURAS (modos 3 y 4): ejercicio de dificultad progresiva ---------- */
+// niveles: [nº de alteraciones, +1 sostenidos / -1 bemoles]; se sube de nivel con un 90 % de precisión
+const KEY_LEVELS = [[1, 1], [1, -1], [2, 1], [2, -1], [3, 1], [3, -1], [4, 1], [4, -1], [5, 1], [5, -1], [6, 1], [6, -1]];
+const KEY_PASS = 0.9;
+const KEY_TONIC_ES = ["Sol", "Fa", "Re", "Si♭", "La", "Mi♭", "Mi", "La♭", "Si", "Re♭", "Fa♯", "Sol♭"];
+const KEY_TONIC_EN = ["G", "F", "D", "B♭", "A", "E♭", "E", "A♭", "B", "D♭", "F♯", "G♭"];
+const SHARP_ORDER = [3, 0, 4, 1, 5, 2, 6], FLAT_ORDER = [6, 2, 5, 1, 4, 0, 3];     // letras (0 = Do ... 6 = Si) en el orden en que aparecen en la armadura
+// altura (step) de cada signo en el pentagrama: [clave][0 = sostenidos, 1 = bemoles]
+const KS_POS = [[[10, 7, 11, 8, 5, 9, 6], [6, 9, 5, 8, 4, 7, 3]], [[-4, -7, -3, -6, -9, -5, -8], [-8, -5, -9, -6, -10, -7, -11]]];
+const keyName = (lv) => (S.es ? KEY_TONIC_ES : KEY_TONIC_EN)[lv] + (S.es ? " mayor" : " major");
+const keySym = (lv) => KEY_LEVELS[lv][0] + (KEY_LEVELS[lv][1] > 0 ? "♯" : "♭");
+function keyOf(clef, lv) {
+  lv = clamp(int(lv, 0), 0, KEY_LEVELS.length - 1);
+  const n = KEY_LEVELS[lv][0], t = KEY_LEVELS[lv][1], order = t > 0 ? SHARP_ORDER : FLAT_ORDER, acc = [0, 0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < n; i++) acc[order[i]] = t;               // acc[letra] = alteración que impone la armadura
+  return { lv, n, type: t, acc, pos: KS_POS[clef][t > 0 ? 0 : 1].slice(0, n), w: n * (t > 0 ? 1.15 : 1.0) + 0.55 };
+}
+let curKey = null;                                             // armadura de la serie en curso (null en los modos normales)
+const isKeyMode = (m) => m === 3 || m === 4;
 // Peso de cada nota según tus últimas 40 sesiones (las recientes cuentan más).
 // 1 = normal; más fallos y más tiempo para acertar => más peso (máx. 6).
 function noteWeights() {
@@ -401,6 +443,7 @@ function pickStep(clef) {
       cand.push({ s, w: uni ? 1 : (a ? a.w : 1.5) });
     }
   }
+  if (curKey) for (const c of cand) if (curKey.acc[mod(c.s, 7)]) c.w *= 2.2;     // las notas alteradas por la armadura salen más
   let pool = cand.filter((c) => clef * 1000 + c.s !== lastKey);
   if (!pool.length) pool = cand;
   let r = Math.random() * pool.reduce((x, c) => x + c.w, 0);
@@ -412,7 +455,7 @@ function makeNote(prev) {
   lastKey = clef * 1000 + s;
   const extra = prev && prev.clef !== clef ? CLEF_GAP : 0;
   const t = prev ? prev.tslot + 1 + extra : 0;
-  return { step: s, clef, extra, slot: t, tslot: t, state: 0, shake: 0, last: isLast };
+  return { step: s, clef, extra, slot: t, tslot: t, state: 0, shake: 0, last: isLast, acc: curKey ? curKey.acc[mod(s, 7)] : 0 };
 }
 // startSession(false) = normal · startSession(true, claves) = repaso · startSession() = repetir el modo actual
 function startSession(review, clefs) {
@@ -423,8 +466,9 @@ function startSession(review, clefs) {
   if (reviewOn && !reviewPool.length) reviewOn = false;
   if (reviewOn) { const pc = [0, 1].filter((c) => reviewPool.some((p) => p.clef === c)); playMode = pc.length === 2 ? 2 : pc[0]; }
   else playMode = S.mode;
+  curKey = !reviewOn && isKeyMode(playMode) ? keyOf(playMode - 3, S.klv[playMode - 3]) : null;      // armadura de esta serie (nivel guardado)
   layout();
-  pianoPreload(pianoSteps(playMode));
+  pianoPreload(pianoMidis(playMode, curKey));
   plan = [];
   if (playMode === 2) {
     let c = rand(0, 1);
@@ -434,7 +478,8 @@ function startSession(review, clefs) {
       c = 1 - c;
     }
   } else {
-    for (let i = 0; i < SESSION_N; i++) plan.push(playMode);
+    const c0 = clefsOf(playMode)[0];
+    for (let i = 0; i < SESSION_N; i++) plan.push(c0);
   }
   generated = 0; notes = []; lastKey = -999;
   score = streak = okCount = badCount = bestStreak = 0;
@@ -446,6 +491,7 @@ function startSession(review, clefs) {
   pauseStart = settingsOpen ? curShownAt : null;
   go("game");
   if (reviewOn) { msg = "Repaso: " + reviewPool.length + " notas a reforzar"; msgOk = true; msgT = 3; }
+  if (curKey) { msg = "Nivel " + (curKey.lv + 1) + "/" + KEY_LEVELS.length + " · " + keyName(curKey.lv) + " (" + keySym(curKey.lv) + ")"; msgOk = true; msgT = 3.5; }
 }
 const restartIfGame = () => { if (scene === "game") startSession(); };
 function pauseBegin() { if (pauseStart === null) pauseStart = performance.now(); }
@@ -497,6 +543,7 @@ function finishSession() {
   if (scene !== "game") return;
   const rec = { t: Date.now(), m: playMode, s: score, r: bestStreak, n: results.slice() };
   if (reviewOn) rec.rv = 1;
+  if (curKey) rec.k = curKey.lv;
   let prev = null;
   for (let i = sessions.length - 1; i >= 0; i--) if (sessions[i].m === rec.m && !!sessions[i].rv === !!rec.rv) { prev = sessions[i]; break; }
   sessions.push(rec);
@@ -506,6 +553,11 @@ function finishSession() {
     byClef: [aggOf(rec.n.filter((e) => e[0] === 0)), aggOf(rec.n.filter((e) => e[0] === 1))],
     review: reviewList(rec.n), rvN: reviewInfo(clefsOf(rec.m)).nWeak
   };
+  if (curKey) {                                      // armaduras: con KEY_PASS de precisión se sube al siguiente nivel
+    const c = playMode - 3, lv = curKey.lv, pass = sum.all.acc >= KEY_PASS, last = lv >= KEY_LEVELS.length - 1;
+    sum.lv = { lv, pass, last, to: pass && !last ? lv + 1 : lv };
+    if (pass && !last) { S.klv[c] = lv + 1;  saveSettings(); }
+  }
   playStreak();
   buzz([25, 40, 25]);
   go("summary");
@@ -518,7 +570,8 @@ function submit(idx) {
   if (!c) return;
   audio();
   const now = performance.now();
-  const ok = mod(c.step, 7) === idx;
+  const ring = idx >= 10 ? 1 : 0, lt = idx >= 10 ? idx - 10 : idx;      // 10-16 = círculo interior (nota alterada por la armadura)
+  const ok = mod(c.step, 7) === lt && ((c.acc || 0) !== 0 ? ring === 1 : ring === 0);
   flashIdx = idx;  flashT = 0.35;  flashOk = ok;
   if (ok) {
     c.state = 1;
@@ -527,7 +580,7 @@ function submit(idx) {
     score += 10 + Math.min(streak, 10);
     results.push([c.clef, c.step, curBad, Math.max(0, Math.round(now - curShownAt))]);
     curShownAt = now;  curBad = 0;
-    playNote(c.step);
+    playNote(c.step, 0.5, c.acc || 0);
     buzz(12);
     const nxt = notes.find((n) => n.state === 0);
     const shift = nxt ? nxt.tslot : 1;
@@ -545,19 +598,26 @@ function submit(idx) {
     buzz([35, 45, 35]);
   }
 }
-function wheelIndex(p) {
+function wheelIndex(p) {                             // 0-6 = círculo exterior · 10-16 = círculo interior (solo con armadura) · -1 = nada
 const w = L.wheel, vx = p.x - w.cx, vy = p.y - w.cy, d = Math.hypot(vx, vy);
-if (d < w.rIn || d > w.rOut) return -1;
 const seg = (Math.PI * 2) / 7;
+if (curKey && w.ring) {
+  const R = w.ring;
+  if (d > R * 0.82 && d <= w.rOut) return Math.floor(mod(Math.atan2(vy, vx) + Math.PI / 2 + seg / 2, Math.PI * 2) / seg) % 7;
+  if (d >= R * 0.3 && d <= R * 0.82) return 10 + (Math.round(mod(Math.atan2(vy, vx) - (Math.PI / 2 - 4 * seg), Math.PI * 2) / seg) % 7);
+  return -1;
+}
+if (d < w.rIn || d > w.rOut) return -1;
 const a = mod(Math.atan2(vy, vx) + Math.PI / 2 + seg / 2, Math.PI * 2);
 return Math.floor(a / seg) % 7;
 }
 function act(id) {
-  if (id.startsWith("mode_")) { S.mode = clamp(int(id.slice(5), 0), 0, 2); saveSettings(); startSession(false); return; }
+  if (id.startsWith("mode_")) { S.mode = clamp(int(id.slice(5), 0), 0, 4); saveSettings(); startSession(false); return; }
   if (id.startsWith("tf_")) { ST.clef = int(id.slice(3), -1); computeStats(); dirty = true; return; }
-  if (id.startsWith("ln_")) { const p = id.split("_"), n = clamp(int(p[2], 0), 0, 4); if (p[1] === "1") S.lf = n; else S.lg = n; saveSettings(); layout(); pianoPreload(pianoSteps(S.mode)); dirty = true; return; }
+  if (id.startsWith("ln_")) { const p = id.split("_"), n = clamp(int(p[2], 0), 0, 4); if (p[1] === "1") S.lf = n; else S.lg = n; saveSettings(); layout(); pianoPreload(pianoMidis(S.mode)); dirty = true; return; }
   if (id.startsWith("acc_")) { S.accent = clamp(int(id.slice(4), 0), 0, ACCENTS.length - 1); applyAccent(); saveSettings(); dirty = true; return; }
-  if (id.startsWith("lnt_")) { const c = clamp(int(id.slice(4), 0), 0, 1); lnOpen[c] = !lnOpen[c]; dirty = true; return; }
+  if (id.startsWith("lnt_")) { const c = clamp(int(id.slice(4), 0), 0, 3); lnOpen[c] = !lnOpen[c]; dirty = true; return; }
+  if (id.startsWith("kl_")) { const p = id.split("_"), c = clamp(int(p[1], 0), 0, 1), lv = clamp(int(p[2], 0), 0, KEY_LEVELS.length - 1); S.klv[c] = lv; saveSettings(); pianoPreload(pianoMidis(3 + c, keyOf(c, lv))); dirty = true; return; }
   if (id.startsWith("tp_")) { ST.period = int(id.slice(3), 0); computeStats(); dirty = true; return; }
   switch (id) {
     case "m_play": go("clefs"); return;
@@ -588,7 +648,7 @@ function act(id) {
     case "name_en":  S.es = false; break;
     case "sound_on": S.sound = true;  playNote(5, 0.4); break;
     case "sound_off": S.sound = false; break;
-    case "piano_on":  S.piano = true;  pianoPreload(pianoSteps(S.mode)); playNote(5, 0.4); break;
+    case "piano_on":  S.piano = true;  pianoPreload(pianoMidis(S.mode)); playNote(5, 0.4); break;
     case "piano_off": S.piano = false; break;
     case "vol_-": S.vol = Math.max(0, S.vol - 1);  playNote(5, 0.4); break;
     case "vol_+": S.vol = Math.min(10, S.vol + 1); playNote(5, 0.4); break;
@@ -621,7 +681,7 @@ function update(dt) {
   } else if (!drag) scrollV = 0;
   if (ST.confirm) { if (performance.now() > ST.confirm) ST.confirm = 0; moving = true; }
   if (scene === "clefs") {                          // despliegue suave de los paneles de líneas adicionales
-    for (let c = 0; c < 2; c++) {
+    for (let c = 0; c < 4; c++) {
       const tg = lnOpen[c] ? 1 : 0, dd = tg - lnT[c];
       if (Math.abs(dd) > 0.004) { lnT[c] += dd * (1 - Math.exp(-16 * dt));  moving = true; } else lnT[c] = tg;
     }
@@ -749,8 +809,8 @@ addEventListener("keydown", (e) => {
   }
   if (settingsOpen || scene !== "game") return;
   const idx = { c: 0, d: 1, e: 2, f: 3, g: 4, a: 5, b: 6 }[k.toLowerCase()];
-  if (idx !== undefined) { submit(idx); return; }
-  if (k === " ") { e.preventDefault(); const c = currentNote(); if (c) { audio(); playNote(c.step); } }
+  if (idx !== undefined) { submit(curKey && e.shiftKey ? 10 + idx : idx); return; }          // con armadura: Mayús + letra = nota alterada
+  if (k === " ") { e.preventDefault(); const c = currentNote(); if (c) { audio(); playNote(c.step, 0.5, c.acc || 0); } }
   else if (k === "n" || k === "N") { S.es = !S.es; saveSettings(); dirty = true; }
   else if (k === "r" || k === "R") startSession();
 });
@@ -902,6 +962,11 @@ const seenMidi = new Set();
 function onMidi(e) {
 const [st, note, vel] = e.data;
 if (!S.midi || settingsOpen || scene !== "game" || (st & 0xF0) !== 0x90 || vel === 0) return;
+if (curKey) {                                      // con armadura se compara la ALTURA (no la ortografía): cualquier octava vale
+  const c = currentNote();
+  if (c) submit((note - (midi(c.step) + (c.acc || 0))) % 12 === 0 ? mod(c.step, 7) + (c.acc ? 10 : 0) : -2);
+  return;
+}
 const idx = SEMITONES.indexOf(note % 12);
 if (idx >= 0) submit(idx);
 }
@@ -987,6 +1052,40 @@ for (let i = 0; i < 5; i++) { const y = stepY(b + 2 * i, clef); line(L.x0, y, L.
 if (!d) line(L.x0, stepY(b + 8, clef), L.x0, stepY(b, clef), ink, lw * 1.4);
 if (clef === 0) glyph(G_CLEF, L.x0 + 0.45 * L.sp, stepY(b + 2, clef), cc);
 else glyph(F_CLEF, L.x0 + 0.45 * L.sp, stepY(b + 6, clef), cc);
+if (curKey) drawKeySig(clef, cc);
+}
+// bemol / sostenido dibujados con trazos (no dependen de ninguna fuente). x = borde izquierdo, y = altura de la nota, u = tamaño de un espacio de pentagrama
+function drawAcc(type, x, y, u, col) {
+  ctx.save();  ctx.strokeStyle = col;  ctx.fillStyle = col;  ctx.lineCap = "butt";  ctx.lineJoin = "round";
+  if (type < 0) {                                  // bemol: plica y panza
+    ctx.lineWidth = 0.11 * u;
+    ctx.beginPath();  ctx.moveTo(x + 0.06 * u, y - 1.75 * u);  ctx.lineTo(x + 0.06 * u, y + 0.5 * u);  ctx.stroke();
+    ctx.lineWidth = 0.17 * u;
+    ctx.beginPath();  ctx.moveTo(x + 0.06 * u, y + 0.5 * u);
+    ctx.bezierCurveTo(x + 0.5 * u, y + 0.35 * u, x + 0.92 * u, y - 0.02 * u, x + 0.66 * u, y - 0.46 * u);
+    ctx.bezierCurveTo(x + 0.5 * u, y - 0.72 * u, x + 0.2 * u, y - 0.58 * u, x + 0.06 * u, y - 0.12 * u);
+    ctx.stroke();
+  } else {                                         // sostenido: dos verticales finas y dos barras gruesas inclinadas
+    ctx.lineWidth = 0.09 * u;
+    ctx.beginPath();  ctx.moveTo(x + 0.3 * u, y - 1.4 * u);  ctx.lineTo(x + 0.3 * u, y + 1.3 * u);
+    ctx.moveTo(x + 0.78 * u, y - 1.3 * u);  ctx.lineTo(x + 0.78 * u, y + 1.4 * u);  ctx.stroke();
+    ctx.lineWidth = 0.22 * u;
+    ctx.beginPath();  ctx.moveTo(x, y - 0.28 * u);  ctx.lineTo(x + 1.08 * u, y - 0.62 * u);
+    ctx.moveTo(x, y + 0.62 * u);  ctx.lineTo(x + 1.08 * u, y + 0.28 * u);  ctx.stroke();
+  }
+  ctx.restore();
+}
+// armadura: los signos van justo detrás de la clave, cada uno en su línea/espacio
+function drawKeySig(clef, col) {
+  const u = L.sp, k = curKey, x0 = L.x0 + 3.45 * u, stepW = (k.type > 0 ? 1.15 : 1.0) * u;
+  for (let i = 0; i < k.n; i++) drawAcc(k.type, x0 + i * stepW, stepY(k.pos[i], clef), u, col);
+}
+// nombre de nota seguido de su alteración (p. ej. "Si♭"): el signo se dibuja pequeño y elevado
+function nameAcc(name, type, cx, cy, size, col) {
+  ctx.font = size + "px system-ui,-apple-system,'Segoe UI',Roboto,sans-serif";
+  const tw = ctx.measureText(name).width, u = size * 0.24, gap = 0.12 * size, aw = (type > 0 ? 1.1 : 0.85) * u, x0 = cx - (tw + gap + aw) / 2;
+  text(name, x0, cy, size, col, "left");
+  drawAcc(type, x0 + tw + gap, cy - size * 0.2, u, col);
 }
 function drawNote(step, x, col, clef) {
 const b = bottomStep(clef), lw = Math.max(1.2, L.sp * 0.1);
@@ -1046,7 +1145,7 @@ ctx.globalAlpha = 1;
 }
 }
 function drawWheel() {
-if (S.skin === 1) { drawWheelDark(); return; }
+if (S.skin === 1 || curKey) { drawWheelDark(); return; }
 const w = L.wheel, seg = (Math.PI * 2) / 7, gap = 0.025;
 for (let i = 0; i < 7; i++) {
 const mid = -Math.PI / 2 + i * seg;
@@ -1090,6 +1189,20 @@ const mid = -Math.PI / 2 + i * seg;
 let col = i === hoverIdx ? "#ffffff" : "#d6d6d6";
 if (i === flashIdx && flashT > 0) col = flashOk ? "#4ade80" : AC.fail;
 text(nameOf(i), w.cx + Math.cos(mid) * R, w.cy + Math.sin(mid) * R, clamp(R * 0.18, 14, 44), col, "center");
+}
+if (curKey) {                                      // círculo interior: las 7 notas con la alteración de la armadura (Sol en la parte baja, como en la imagen de referencia)
+  const R2 = R * 0.6, g2 = 0.34;
+  ctx.strokeStyle = "#4d4d4d";  ctx.lineWidth = Math.max(1.5, R * 0.011);
+  for (let i = 0; i < 7; i++) {
+    const mid = Math.PI / 2 + (i - 4) * seg;
+    ctx.beginPath();  ctx.arc(w.cx, w.cy, R2, mid + g2, mid + seg - g2);  ctx.stroke();
+  }
+  for (let i = 0; i < 7; i++) {
+    const mid = Math.PI / 2 + (i - 4) * seg, id = 10 + i;
+    let col = id === hoverIdx ? "#ffffff" : "#d6d6d6";
+    if (id === flashIdx && flashT > 0) col = flashOk ? "#4ade80" : AC.fail;
+    nameAcc(nameOf(i), curKey.type, w.cx + Math.cos(mid) * R2, w.cy + Math.sin(mid) * R2, clamp(R * 0.135, 11, 32), col);
+  }
 }
 }
 
@@ -1177,7 +1290,7 @@ function drawSettings() {
   };
   // selector de color: una fila de círculos grandes; si no cupieran cómodos, dos filas
   const availW = w - pad * 2, nAcc = ACCENTS.length, per = nAcc;
-  const sd = clamp((availW - 4 * 14) / nAcc, 28, 40), swGap = Math.min(28, (availW - nAcc * sd) / (nAcc - 1));
+  const sd = clamp((availW - (nAcc - 1) * 14) / nAcc, 26, 34), swGap = Math.min(24, (availW - nAcc * sd) / (nAcc - 1));
   const colorsH = Math.round(rowH * 0.46) + 8 + sd + 22;
   clipRect(0, top, L.vw, L.vh - top);
   let y = top + 4 - scrollY, content = 4;
@@ -1245,7 +1358,7 @@ function go(s) {
   scene = s;  sceneHits = [];  scrollY = 0;  scrollV = 0;  maxScroll = 0;  drag = null;  finishAt = 0;
   if (changed && trans) trans.dir = depth() >= d0 ? 1 : -1;
   dirty = true;
-  if (s === "clefs") { lnOpen = [false, false];  lnT = [0, 0];  pianoPreload(pianoSteps(S.mode)); }
+  if (s === "clefs") { lnOpen = [false, false, false, false];  lnT = [0, 0, 0, 0];  pianoPreload(pianoMidis(S.mode, isKeyMode(S.mode) ? keyOf(S.mode - 3, S.klv[S.mode - 3]) : null)); }
   syncHist();  wakeSync();
 }
 const darkUI = () => S.skin === 1 || scene !== "game";
@@ -1416,39 +1529,45 @@ function clefCard(id, mode, x, y, w, h, top) {
   const hov = hoverBtn === id;
   ctx.fillStyle = hov ? accA(0.25) : AC.card;  rr(x, y, w, h, 12);  ctx.fill();
   ctx.strokeStyle = hov ? AC.accV : AC.edge;  ctx.lineWidth = 1.2;  ctx.stroke();
-  const s = h * 0.1, cy = y + h / 2, ix = x + h * 0.15, iw = h * 0.72;
+  const s = h * 0.1, cy = y + h / 2, ix = x + h * 0.15, iw = h * 0.72, cl = mode === 1 || mode === 4 ? 1 : 0;
   for (let i = 0; i < 5; i++) line(ix, cy + (i - 2) * s, ix + iw, cy + (i - 2) * s, "#6b6b6b", 1);
   const col = "#e6e6e6";
-  if (mode === 0) glyph(G_CLEF, ix + s * 0.4, cy + s, col, 4 * s);
-  else if (mode === 1) glyph(F_CLEF, ix + s * 0.4, cy - s, col, 4 * s);
-  else { glyph(G_CLEF, ix + s * 0.1, cy + s, col, 4 * s);  glyph(F_CLEF, ix + iw * 0.52, cy - s, col, 4 * s); }
+  if (mode === 2) { glyph(G_CLEF, ix + s * 0.1, cy + s, col, 4 * s);  glyph(F_CLEF, ix + iw * 0.52, cy - s, col, 4 * s); }
+  else if (cl === 0) glyph(G_CLEF, ix + s * 0.4, cy + s, col, 4 * s);
+  else glyph(F_CLEF, ix + s * 0.4, cy - s, col, 4 * s);
+  if (mode >= 3) {                                  // armaduras: mini armadura del nivel actual junto a la clave (hasta 3 signos)
+    const kk = keyOf(cl, S.klv[cl]), mid = bottomStep(cl) + 4;
+    for (let i = 0; i < Math.min(kk.n, 3); i++) drawAcc(kk.type, ix + s * 3.5 + i * s * 1.1, cy - (kk.pos[i] - mid) * s * 0.5, s * 0.8, col);
+  }
   const tx = ix + iw + h * 0.13;
+  const sub = ["Registro agudo", "Registro grave", "Intercaladas al azar", "Nivel " + (S.klv[0] + 1) + "/" + KEY_LEVELS.length + " · " + keyName(S.klv[0]), "Nivel " + (S.klv[1] + 1) + "/" + KEY_LEVELS.length + " · " + keyName(S.klv[1])][mode];
   text(MODE_NAME[mode], tx, y + h * 0.38, clamp(h * 0.23, 15, 22), AC.txt, "left", "", x + w - tx - 40);
-  text(["Registro agudo", "Registro grave", "Intercaladas al azar"][mode], tx, y + h * 0.68, clamp(h * 0.16, 12, 15), AC.dim, "left", "", x + w - tx - 40);
+  text(sub, tx, y + h * 0.68, clamp(h * 0.16, 12, 15), AC.dim, "left", "", x + w - tx - 40);
   ctx.strokeStyle = hov ? AC.accT : "#777";  ctx.lineWidth = 2;  ctx.lineCap = "round";
   ctx.beginPath();  ctx.moveTo(x + w - 26, cy - 8);  ctx.lineTo(x + w - 18, cy);  ctx.lineTo(x + w - 26, cy + 8);  ctx.stroke();
   ctx.lineCap = "butt";
   visHit(id, x, y, w, h, top);
 }
-// los botones solo existen en la parte visible (por debajo de la barra y dentro de la pantalla)
+// los botones solo existen en la parte visible de la pantalla (por debajo de la barra) para que no se pulse algo oculto al hacer scroll
 function visHit(id, x, y, w, h, top) {
   const y0 = Math.max(y, top), y1 = Math.min(y + h, L.vh);
   if (y1 > y0) addHit(id, x, y0, w, y1 - y0);
 }
-// estado de los paneles de líneas adicionales (0 = sol, 1 = fa): lnOpen = abierto/cerrado, lnT = progreso de la animación (0..1)
-let lnOpen = [false, false], lnT = [0, 0];
-// círculo-botón de la esquina de la tarjeta: muestra cuántas líneas adicionales hay y abre/cierra el panel
-function lnBadge(c, x, y, w) {
-  const id = "lnt_" + c, hov = hoverBtn === id, col = clefCol(c), r = 17, bx = x + w - 10, by = y + 4, t = lnT[c], n = c === 1 ? S.lf : S.lg;
+// paneles desplegables: 0 = líneas de sol · 1 = líneas de fa · 2 = nivel de armaduras en sol · 3 = nivel de armaduras en fa (lnT = progreso de la animación)
+let lnOpen = [false, false, false, false], lnT = [0, 0, 0, 0];
+// círculo-botón de la esquina de la tarjeta: muestra las líneas adicionales (o el nivel) actuales y abre/cierra el panel
+function lnBadge(pi, x, y, w) {
+  const id = "lnt_" + pi, hov = hoverBtn === id, c = pi < 2 ? pi : pi - 2, col = clefCol(c), r = 17, bx = x + w - 10, by = y + 4, t = lnT[pi];
+  const n = pi < 2 ? (c === 1 ? S.lf : S.lg) : S.klv[c] + 1;
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,.55)";  ctx.shadowBlur = 8;  ctx.shadowOffsetY = 2;        // sombra: aspecto de botón elevado
   ctx.fillStyle = t > 0.5 ? col : mixHex(col, "#2a2a2a", hov ? 0.5 : 0.65);
   ctx.beginPath();  ctx.arc(bx, by, r, 0, Math.PI * 2);  ctx.fill();
   ctx.restore();
   ctx.strokeStyle = col;  ctx.lineWidth = 2;  ctx.beginPath();  ctx.arc(bx, by, r, 0, Math.PI * 2);  ctx.stroke();
-  text(String(n), bx, by + 0.5, 16, t > 0.5 ? (lum(col) > 0.42 ? "#161616" : "#ffffff") : "#ffffff", "center", "bold");
+  text(String(n), bx, by + 0.5, n > 9 ? 14 : 16, t > 0.5 ? (lum(col) > 0.42 ? "#161616" : "#ffffff") : "#ffffff", "center", "bold");
 }
-// panel desplegable con el selector 0-4; PH = alto completo, ph = alto visible durante la animación
+// panel de líneas adicionales (0-4); PH = alto completo, ph = alto visible durante la animación
 function lnPanel(c, x, y, w, PH, ph, top) {
   const col = clefCol(c), colT = clefTxt(c), val = c === 1 ? S.lf : S.lg, ix = x + 12, iw = w - 24;
   ctx.save();
@@ -1468,27 +1587,51 @@ function lnPanel(c, x, y, w, PH, ph, top) {
   }
   ctx.restore();
 }
+// panel de niveles de armaduras: 12 botones (nº de alteraciones + signo), el nivel actual resaltado
+function kPanel(pi, x, y, w, PH, ph, top) {
+  const c = pi - 2, col = clefCol(c), colT = clefTxt(c), val = S.klv[c], ix = x + 12, iw = w - 24;
+  ctx.save();
+  ctx.beginPath();  ctx.rect(x - 2, y - 2, w + 4, ph + 4);  ctx.clip();
+  ctx.fillStyle = "#262626";  rr(x, y, w, PH, 12);  ctx.fill();
+  ctx.strokeStyle = AC.edge;  ctx.lineWidth = 1.2;  ctx.stroke();
+  text("Nivel " + (val + 1) + " · " + keyName(val), ix + 2, y + 22, 13, colT, "left", "", iw * 0.75);
+  text("Sube con " + Math.round(KEY_PASS * 100) + " % de precisión", ix + iw - 2, y + 22, 11, AC.dim, "right", "", iw * 0.5);
+  const gp = 6, bw = (iw - 5 * gp) / 6, bh = 40, live = lnOpen[pi] && lnT[pi] > 0.85;
+  for (let lv = 0; lv < KEY_LEVELS.length; lv++) {
+    const r = Math.floor(lv / 6), k = lv % 6, bx = ix + k * (bw + gp), by = y + 36 + r * (bh + 8), on = val === lv, id = "kl_" + c + "_" + lv;
+    const tc = on ? (c ? col : "#ffffff") : "#9a9a9a", tp = KEY_LEVELS[lv][1];
+    ctx.fillStyle = on ? (c ? rgbaHex(AC.fa, 0.22) : accA(0.45)) : hoverBtn === id ? "#454545" : "#3b3b3b";
+    rr(bx, by, bw, bh, 10);  ctx.fill();
+    ctx.strokeStyle = on ? col : "#4a4a4a";  ctx.lineWidth = on ? 1.6 : 1;  ctx.stroke();
+    text(String(KEY_LEVELS[lv][0]), bx + bw * 0.36, by + bh / 2, 16, tc, "center", on ? "bold" : "");
+    drawAcc(tp, bx + bw * 0.36 + 8, by + bh / 2 + (tp < 0 ? 2 : 0), 7, tc);
+    if (live) visHit(id, bx, by, bw, bh, top);
+  }
+  ctx.restore();
+}
 function drawClefs() {
   const cx = L.cx0 + L.cw / 2;
   drawBar("Elige la clave", { back: "back", actions: [{ id: "open", icon: "gear" }] });
   const top = L.top + L.barH, w = Math.min(L.cw - L.m * 4, 520), x = cx - w / 2;
-  const ch = clamp(L.vh * 0.115, 56, 92), grp = 20, PH = 12 + 22 + 6 + 46 + 12;
+  const ch = clamp(L.vh * 0.1, 54, 88), grp = 18;
   let y = top + L.m * 1.5 + 14 - scrollY;
   clipRect(0, top, L.vw, L.vh - top);
-  for (let m = 0; m < 3; m++) {
-    if (m < 2) visHit("lnt_" + m, x + w - 34, y - 20, 48, 48, top);      // se registra ANTES que la tarjeta para tener prioridad
+  for (let m = 0; m < 5; m++) {
+    if (m === 3) { text("ARMADURAS", x + 2, y + 6, 12, AC.dim, "left", "bold");  y += 24; }
+    const pi = m < 2 ? m : m === 2 ? -1 : m - 1;                          // panel/botón de cada tarjeta (las mezcladas no tienen)
+    if (pi >= 0) visHit("lnt_" + pi, x + w - 34, y - 20, 48, 48, top);   // se registra ANTES que la tarjeta para tener prioridad
     clefCard("mode_" + m, m, x, y, w, ch, top);
-    if (m < 2) {
-      const t = lnT[m], s = 1 - 2 * t, yc = y + ch - 9;                  // flechita: abajo = cerrado, arriba = abierto
-      ctx.strokeStyle = t > 0.5 ? clefTxt(m) : "#777";  ctx.lineWidth = 2;  ctx.lineCap = "round";
+    if (pi >= 0) {
+      const t = lnT[pi], s = 1 - 2 * t, yc = y + ch - 9, cc = pi < 2 ? pi : pi - 2;       // flechita: abajo = cerrado, arriba = abierto
+      ctx.strokeStyle = t > 0.5 ? clefTxt(cc) : "#777";  ctx.lineWidth = 2;  ctx.lineCap = "round";
       ctx.beginPath();  ctx.moveTo(cx - 7, yc - 3 * s);  ctx.lineTo(cx, yc + 3 * s);  ctx.lineTo(cx + 7, yc - 3 * s);  ctx.stroke();
       ctx.lineCap = "butt";
-      lnBadge(m, x, y, w);
+      lnBadge(pi, x, y, w);
     }
     y += ch;
-    if (m < 2) {
-      const t = lnT[m], ph = Math.round(PH * t);
-      if (ph > 1) { y += Math.round(8 * t);  lnPanel(m, x, y, w, PH, ph, top);  y += ph; }
+    if (pi >= 0) {
+      const t = lnT[pi], PH = pi < 2 ? 98 : 136, ph = Math.round(PH * t);
+      if (ph > 1) { y += Math.round(8 * t);  if (pi < 2) lnPanel(pi, x, y, w, PH, ph, top); else kPanel(pi, x, y, w, PH, ph, top);  y += ph; }
     } else { text("Usa las líneas adicionales de sol y de fa.", x + 2, y + 14, 12, AC.dim, "left");  y += 22; }
     y += grp;
   }
@@ -1516,7 +1659,7 @@ function drawSummary() {
   clipRect(0, L.top + L.barH, L.vw, viewBot - L.top - L.barH);
   let y = L.top + L.barH + pad - scrollY;
   y += 6;
-  text((r.rv ? "Repaso de fallos" : MODE_NAME[r.m]) + " · " + SESSION_N + " notas", cx, y, fs, AC.dim, "center");
+  text((r.rv ? "Repaso de fallos" : MODE_NAME[r.m] + (r.k !== undefined ? " · " + keyName(r.k) : "")) + " · " + SESSION_N + " notas", cx, y, fs, AC.dim, "center", "", w);
   y += fs * 1.2 + pad;
   // anillo de precisión
   const R = clamp(w * 0.19, 54, 88), lw = R * 0.2, ry = y + R + lw / 2;
@@ -1534,6 +1677,11 @@ function drawSummary() {
     text(t, cx, y, fs, d === 0 ? AC.dim : d > 0 ? AC.ok : AC.bad, "center");
   } else text("Primera sesión de esta modalidad", cx, y, fs, AC.dim, "center");
   y += fs * 1.2 + pad;
+  if (sum.lv) {                                      // armaduras: ¿se sube de nivel?
+    const q = sum.lv, nt = q.pass ? (q.last ? "¡Nivel máximo superado!" : "¡Nivel superado! Subes al nivel " + (q.to + 1) + ": " + keyName(q.to) + " (" + keySym(q.to) + ")") : "Necesitas un " + Math.round(KEY_PASS * 100) + " % de precisión para subir de nivel";
+    text(nt, cx, y, fs + 1, q.pass ? AC.ok : AC.mid, "center", "bold", w);
+    y += fs * 1.4 + pad * 0.6;
+  }
   // tarjetas
   const gap = 10, cw = (w - gap) / 2, ch = clamp(w * 0.2, 66, 84);
   const dN = P ? delta(A.nps, P.nps, true, 2, "") : null, dA = P ? delta(A.avg, P.avg, false, 1, " s") : null;
@@ -1772,9 +1920,23 @@ if (S.midi) initMidi();
 requestAnimationFrame(frame);
 }
 addEventListener("load", () => {
-if (document.fonts && document.fonts.load) {
-document.fonts.load("40px Bravura", "\uE050\uE062\uE1D5\uE1D6").then(start, start);
-} else start();
+  const t0 = performance.now(), sp = document.getElementById("splash"), fill = document.getElementById("splashFill"), msgEl = document.getElementById("splashMsg");
+  const setP = (p, t) => { if (fill) fill.style.width = Math.round(p * 100) + "%"; if (msgEl && t !== undefined) msgEl.textContent = t; };
+  try { loadSettings();  if (fill) fill.style.background = AC.acc; } catch (e) {}          // la barra usa el color de acento elegido
+  setP(0.3, "Descargando fuentes…");
+  let okFont = true;
+  const fontP = document.fonts && document.fonts.load
+    ? document.fonts.load("40px Bravura", "\uE050\uE062\uE1D5\uE1D6").then((fs) => { okFont = !!(fs && fs.length); }, () => { okFont = false; })
+    : Promise.resolve();
+  Promise.race([fontP, new Promise((r) => setTimeout(r, 6000))]).then(() => {
+    setP(0.85, okFont ? "Preparando…" : "No se encontró fonts/Bravura.otf: se usa una fuente de reserva");
+    const wait = Math.max(0, (okFont ? 900 : 2400) - (performance.now() - t0));      // el logo se ve al menos ~1 s
+    setTimeout(() => {
+      start();
+      setP(1, "");
+      if (sp) { sp.classList.add("off");  setTimeout(() => { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 450); }
+    }, wait);
+  });
 });
 </script>
 <style>
