@@ -1,9 +1,10 @@
 /* ReadNotes – service worker (funciona sin conexión)
    Cambia VERSION en cada publicación: así los móviles detectan la nueva versión
    y muestran el aviso "Nueva versión disponible". */
-const VERSION = "1.0.22";
+const VERSION = "1.1.0";
 const CACHE = "readnotes-" + VERSION;
 const SOUND = "readnotes-sound";            // muestras de piano: se conservan entre versiones
+const MELO = "readnotes-melodias";         // lista y partituras de melodías: se conservan entre versiones
 const ASSETS = [
   "./",
   "index.html",
@@ -32,7 +33,7 @@ self.addEventListener("message", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("readnotes-") && k !== CACHE && k !== SOUND).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("readnotes-") && k !== CACHE && k !== SOUND && k !== MELO).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -58,6 +59,17 @@ self.addEventListener("fetch", (e) => {
         if (res.ok) c.put(req, res.clone());
         return res;
       })))
+    );
+    return;
+  }
+
+  // Melodías (lista + partituras): red primero, así una canción nueva en GitHub aparece enseguida; sin conexión, la última copia guardada
+  if (url.pathname.toLowerCase().includes("/melodias/")) {
+    e.respondWith(
+      fetch(req).then((res) => {
+        if (res.ok) { const copy = res.clone(); caches.open(MELO).then((c) => c.put(req, copy)); }
+        return res;
+      }).catch(() => caches.match(req).then((hit) => hit || new Response("", { status: 504 })))
     );
     return;
   }

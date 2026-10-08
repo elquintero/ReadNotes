@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "melodias": [
+    {
+      "id": "alegria",
+      "titulo": "Himno a la alegría",
+      "autor": "L. van Beethoven",
+      "archivo": "alegria.mxl"
+    },
+    {
+      "id": "estrellita",
+      "titulo": "Estrellita, ¿dónde estás?",
+      "autor": "Tradicional",
+      "archivo": "estrellita.mxl"
+    }
+  ]
+}
