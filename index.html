@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.3.0", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.3.1", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -1757,20 +1757,27 @@ function drawKeyboard() {
 const MIC = { ctx: null, an: null, src: null, stream: null, buf: null, timer: 0, run: false };
 let micErr = "", micMuteUntil = 0, micLevel = 0, micShow = "", micShowT = 0;
 let micSt = { cand: -1, n: 0, lock: -1, quiet: 0 };
-const MIC_GATE = 0.012;                                   // volumen mínimo (RMS) para considerar que hay sonido
+const MIC_GATE = 0.008;                                   // volumen mínimo (RMS) para considerar que hay sonido
 const AUDIO_OPTS = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
 // mientras suena la propia app (piano, avisos) el micrófono no escucha: evita que se conteste solo
 {
-  const _tone = tone, _sample = playSample;
-  tone = function (...a) { micMuteUntil = performance.now() + 900;  return _tone.apply(this, a); };
-  playSample = function (...a) { micMuteUntil = performance.now() + 1100;  return _sample.apply(this, a); };
+  const _tone = tone, _note = playNote;
+  tone = function (f, dur, type, ...a) {                  // aviso de fallo (cuadrada) o de racha: se silencia lo justo
+    if (type === "square") micMuteUntil = performance.now() + 450;
+    else if (f >= 500 && dur <= 0.3) micMuteUntil = performance.now() + 800;
+    return _tone.call(this, f, dur, type, ...a);
+  };
+  playNote = function (step, vol, acc) {                  // el piano de la app: se ignora esa nota hasta que cambie o haya silencio
+    if (MIC.run && micSt.lock < 0) micSt.lock = midi(step) + (acc || 0);
+    return _note.apply(this, arguments);
+  };
 }
 function midiName(m) {
   const pc = mod(m, 12), idx = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6][pc], black = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0][pc];
   return nameOf(idx) + (black ? "♯" : "") + (Math.floor(m / 12) - 1);
 }
 function yinPitch(buf, sr) {
-  const W = 2048, maxTau = Math.min(Math.floor(sr / 60), buf.length - W - 1), minTau = Math.max(2, Math.floor(sr / 2200));
+  const W = 1280, maxTau = Math.min(Math.floor(sr / 75), buf.length - W - 1), minTau = Math.max(2, Math.floor(sr / 2200));
   const d = new Float32Array(maxTau + 1), dn = new Float32Array(maxTau + 1);
   for (let tau = 1; tau <= maxTau; tau++) {
     let s = 0;
@@ -1782,7 +1789,12 @@ function yinPitch(buf, sr) {
   for (let tau = 1; tau <= maxTau; tau++) { run += d[tau];  dn[tau] = run ? (d[tau] * tau) / run : 1; }
   let tau = -1;
   for (let t = minTau; t < maxTau; t++) {
-    if (dn[t] < 0.15) { while (t + 1 < maxTau && dn[t + 1] < dn[t]) t++;  tau = t;  break; }
+    if (dn[t] < 0.2) { while (t + 1 < maxTau && dn[t + 1] < dn[t]) t++;  tau = t;  break; }
+  }
+  if (tau < 0) {                                          // voz o instrumento ruidosos: se acepta el mejor mínimo si es claro
+    let best = minTau;
+    for (let t = minTau; t < maxTau; t++) if (dn[t] < dn[best]) best = t;
+    if (dn[best] < 0.3) tau = best;
   }
   if (tau < 1 || tau >= maxTau) return 0;
   const a = dn[tau - 1], b = dn[tau], c = dn[tau + 1], den = a - 2 * b + c;
@@ -1812,11 +1824,11 @@ async function micStart() {
     MIC.ctx = new AC2();
     if (MIC.ctx.state === "suspended") await MIC.ctx.resume().catch(() => {});
     MIC.src = MIC.ctx.createMediaStreamSource(stream);
-    MIC.an = MIC.ctx.createAnalyser();  MIC.an.fftSize = 4096;
+    MIC.an = MIC.ctx.createAnalyser();  MIC.an.fftSize = 2048;
     MIC.src.connect(MIC.an);
     MIC.stream = stream;  MIC.buf = new Float32Array(MIC.an.fftSize);
     micSt = { cand: -1, n: 0, lock: -1, quiet: 0 };
-    MIC.timer = setInterval(micTick, 50);
+    MIC.timer = setInterval(micTick, 25);
     micErr = "";
   } catch (e) {
     MIC.run = false;  S.mic = false;
@@ -1854,9 +1866,9 @@ function micTick() {
   const nm = midiName(m);
   if (nm !== micShow) { micShow = nm;  dirty = true; }
   micShowT = now;
-  if (m === st.lock) { st.cand = -1;  return; }           // misma nota ya contestada: hay que dejar de sonar o cambiar de nota
+  if (st.lock >= 0 && mod(m, 12) === mod(st.lock, 12)) { st.cand = -1;  return; }           // misma nota ya contestada: hay que dejar de sonar o cambiar de nota
   if (m === st.cand) st.n++; else { st.cand = m;  st.n = 1; }
-  if (st.n >= 3) {                                        // nota estable ~150 ms
+  if (st.n >= 2) {                                        // nota estable ~50 ms
     st.lock = m;  st.cand = -1;  st.n = 0;
     if (playMode === 5 && hold) melRelease();
     submit(-1, { midi: m });
