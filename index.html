@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.2.0", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.2.1", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -611,10 +611,13 @@ function submit(idx, kb) {
     if (streak > S.rec) { S.rec = streak; saveSettings(); }
     score += 10 + Math.min(streak, 10);
     results.push([c.clef, c.step, curBad, Math.max(0, Math.round(now - curShownAt - (playMode === 5 ? melHoldMs : 0)))]);
+    c.bad = curBad;
     curShownAt = now;  curBad = 0;
     if (playMode !== 5) { playNote(c.step, 0.5, c.acc || 0);  buzz(12); }
     const nxt = notes.find((n) => n.state === 0);
-    const shift = nxt ? nxt.tslot : 1;
+    const ln2 = notes.find((n) => n.last);                          // doble barra final ya visible -> el pentagrama se queda quieto
+    const stay = !!ln2 && L.curX + ln2.tslot * L.gap + L.gap * 0.72 <= L.x1 - L.gap * 0.3;
+    const shift = stay ? 0 : nxt ? nxt.tslot : 1;
     for (const n of notes) n.tslot -= shift;
     if (generated < SN()) {
       const nn = makeNote(notes[notes.length - 1]);
@@ -1161,7 +1164,7 @@ const alpha = clamp((x - L.leftLimit) / (1.6 * L.sp), 0, 1);
 if (alpha <= 0 || x > (S.skin === 1 ? L.x1 : p.x + p.w + L.sp)) continue;
 const dk = S.skin === 1;
 let col = dk ? "#c2c2c2" : C.ink;
-if (n.state === 1) col = dk ? "#c2c2c2" : C.ok;
+if (n.state === 1) col = n.bad > 0 ? AC.fail : dk ? "#c2c2c2" : C.ok;
 else if (n === cur) { col = dk ? "#c2c2c2" : AC.accP; if (flashT > 0 && !flashOk) col = C.bad; }
 const shake = Math.sin(performance.now() * 0.05) * 0.25 * L.sp * n.shake;
 ctx.globalAlpha = alpha;
@@ -1170,6 +1173,7 @@ const cb = bottomStep(n.clef);
 glyph(n.clef === 0 ? G_CLEF : F_CLEF, x - 2.7 * L.sp, stepY(cb + (n.clef === 0 ? 2 : 6), n.clef), col, 2.2 * L.sp);
 }
 drawNote(n.step, x + shake, col, n.clef, n.beats ? n : null);
+if (n.state === 1 && n.bad > 0) text(nameOf(mod(n.step, 7)), x, p.y + L.sp * 0.7, clamp(L.sp * 1.05, 11, 20), AC.fail, "center");
 ctx.globalAlpha = 1;
 }
 const ln = notes.find((n) => n.last);
@@ -1713,7 +1717,7 @@ function kbHit(p) {
 }
 function kbPress(k) { if (k) submit(-1, { midi: k.midi }); }
 function drawKeyboard() {
-  const r = L.kb, ks = kbKeys(), dark = S.skin === 1, okCol = dark ? "#4ade80" : "#2f9e5a";
+  const r = L.kb, ks = kbKeys(), dark = S.skin === 1, okCol = dark ? "#2da35f" : "#25804a";
   const lit = (k) => (flashT > 0 && flashKey === k.midi ? (flashOk ? okCol : AC.fail) : hold && hold.kb && hold.kb.midi === k.midi ? AC.acc : null);
   ctx.fillStyle = dark ? "#262626" : "#cfc9b8";  ctx.fillRect(r.x, r.y, r.w, r.h);
   for (const k of ks.whites) {
