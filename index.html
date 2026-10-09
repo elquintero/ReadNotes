@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.4.0", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.4.1", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -1444,7 +1444,6 @@ const melSec = (beats) => (beats * 60) / mel.bpm;
 const melNeed = (n) => (S.melHold ? Math.max(0, MEL_HOLD * melSec(n.beats) - MEL_GRACE) : 0);
 
 /* ---------- lista de canciones y categorías ---------- */
-const CAT_COL = { pop: "#e0457b", clasica: "#5b95f5", disney: "#e8a93a", cine: "#9a7cf5", anime: "#3fb87f", jazz: "#b86ae6", navidad: "#e0524d", infantil: "#f0a030", tradicional: "#d97b4a", estrella: "#e8c030" };
 async function loadMelList(force) {
   if (melState === "loading" || (melState === "ok" && !force)) return;
   melState = "loading";  melErr = "";  dirty = true;
@@ -1662,44 +1661,107 @@ function drawShaped(step, x, col, clef, n) {
 }
 
 /* ---------- iconos de categoría (vectoriales, estilo línea) ---------- */
-function catIcon(id, cx, cy, r, col) {
-  ctx.save();  ctx.translate(cx, cy);  ctx.scale(r, r);
-  ctx.strokeStyle = col;  ctx.fillStyle = col;  ctx.lineWidth = 0.13;  ctx.lineCap = "round";  ctx.lineJoin = "round";
-  const P = (fn) => { ctx.beginPath();  fn();  ctx.stroke(); };
-  const R = (x, y, w, h, k) => { ctx.beginPath();  ctx.moveTo(x + k, y);  ctx.arcTo(x + w, y, x + w, y + h, k);  ctx.arcTo(x + w, y + h, x, y + h, k);  ctx.arcTo(x, y + h, x, y, k);  ctx.arcTo(x, y, x + w, y, k);  ctx.closePath();  ctx.stroke(); };
+const CAT_ICONS = ["pop", "clasica", "disney", "cine", "anime", "jazz", "nota", "infantil", "estrella", "tradicional", "pandereta", "guitarra", "navidad", "rock", "videojuegos", "himnos", "religiosa", "country", "teatro", "amor", "tambor", "electronica", "metronomo", "animales", "naturaleza"];
+const CAT_COL = { pop: "#e0457b", clasica: "#5b95f5", disney: "#e8a93a", cine: "#9a7cf5", anime: "#3fb87f", jazz: "#b86ae6", infantil: "#f0a030", estrella: "#e8c030", tradicional: "#d97b4a", pandereta: "#d97b4a", guitarra: "#d97b4a", navidad: "#e0524d", rock: "#ef5350", videojuegos: "#4fc3f7", himnos: "#e57373", religiosa: "#b39ddb", country: "#d7a35a", teatro: "#f06292", amor: "#ec407a", tambor: "#c08b6a", electronica: "#26c6da", metronomo: "#9ccc65", animales: "#ffb74d", naturaleza: "#66bb6a" };
+// si el json no indica un icono conocido, se busca por el nombre de la categoría
+const CAT_WORDS = {
+  pop: ["pop"], clasica: ["clasic", "barroco", "romantic", "orquesta", "sinfon"], disney: ["disney", "pixar", "animacion", "dibujos"], cine: ["cine", "pelicul", "banda sonora", "bandas sonoras", "soundtrack", "serie"],
+  anime: ["anime", "manga", "japon"], jazz: ["jazz", "blues", "swing", "soul"], infantil: ["infantil", "nino", "nina", "cole", "escuela", "cancion de cuna"], navidad: ["navid", "villancico"],
+  tradicional: ["tradicion", "popular", "folclor", "folklor", "regional", "folk"], guitarra: ["guitarra", "flamenco", "latin", "bossa", "acustic", "bolero"], rock: ["rock", "metal", "punk", "grunge"],
+  videojuegos: ["videojuego", "juego", "game", "gaming", "nintendo", "retro"], himnos: ["himno", "patria", "bandera", "nacional", "pais"], religiosa: ["religios", "gospel", "iglesia", "sacra", "espiritual", "liturg"],
+  country: ["country", "western", "vaquero"], teatro: ["teatro", "musical", "opera", "broadway", "zarzuela"], amor: ["amor", "romant", "balada"], tambor: ["marcha", "militar", "tambor", "percusion"],
+  electronica: ["electr", "dance", "techno", "house", "disco"], metronomo: ["ejercicio", "escala", "tecnica", "practica", "estudio"], animales: ["animal", "mascota", "granja"], naturaleza: ["naturaleza", "paisaje", "campo"]
+};
+function resolveIcon(c) {
+  const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (CAT_ICONS.includes(c.icono)) return c.icono;
+  const t = norm(c.icono) + " " + norm(c.id) + " " + norm(c.nombre);
+  for (const k in CAT_WORDS) if (CAT_WORDS[k].some((w) => t.includes(w))) return k;
+  return "nota";
+}
+function catIcon(id, cx, cy, r, col, g) {
+  g = g || ctx;
+  g.save();  g.translate(cx, cy);  g.scale(r, r);
+  g.strokeStyle = col;  g.fillStyle = col;  g.lineWidth = 0.13;  g.lineCap = "round";  g.lineJoin = "round";
+  const P = (fn) => { g.beginPath();  fn();  g.stroke(); };
+  const R = (x, y, w, h, k) => { g.beginPath();  g.moveTo(x + k, y);  g.arcTo(x + w, y, x + w, y + h, k);  g.arcTo(x + w, y + h, x, y + h, k);  g.arcTo(x, y + h, x, y, k);  g.arcTo(x, y, x + w, y, k);  g.closePath();  g.stroke(); };
+  const C = (x, y, k, fill) => { g.beginPath();  g.arc(x, y, k, 0, Math.PI * 2);  fill ? g.fill() : g.stroke(); };
+  const noteIcon = () => { g.beginPath();  g.ellipse(-0.3, 0.55, 0.3, 0.22, -0.4, 0, Math.PI * 2);  g.fill();  P(() => { g.moveTo(-0.04, 0.5);  g.lineTo(-0.04, -0.85);  g.bezierCurveTo(0.1, -0.5, 0.6, -0.5, 0.55, -0.05); }); };
   switch (id) {
     case "pop":                                            // micrófono
-      R(-0.3, -0.9, 0.6, 1.15, 0.3);  P(() => ctx.arc(0, -0.05, 0.58, 0, Math.PI));
-      P(() => { ctx.moveTo(0, 0.53);  ctx.lineTo(0, 0.9);  ctx.moveTo(-0.3, 0.9);  ctx.lineTo(0.3, 0.9); });  break;
-    case "clasica":                                        // piano de cola
-      R(-0.9, -0.1, 1.8, 0.95, 0.12);
-      P(() => { ctx.moveTo(-0.9, -0.1);  ctx.bezierCurveTo(-0.9, -0.8, 0.3, -0.9, 0.55, -0.1); });
-      P(() => { for (const x of [-0.45, 0, 0.45]) { ctx.moveTo(x, 0.3);  ctx.lineTo(x, 0.85); } });
-      for (const x of [-0.45, 0, 0.45]) ctx.fillRect(x - 0.09, -0.1, 0.18, 0.42);  break;
-    case "disney":                                         // castillo
-      R(-0.75, -0.15, 1.5, 1.0, 0.06);  R(-0.75, -0.55, 0.38, 0.45, 0.05);  R(0.37, -0.55, 0.38, 0.45, 0.05);  R(-0.2, -0.85, 0.4, 0.75, 0.05);
-      P(() => { ctx.moveTo(-0.2, 0.85);  ctx.lineTo(-0.2, 0.5);  ctx.arc(0, 0.5, 0.2, Math.PI, 0);  ctx.lineTo(0.2, 0.85); });  break;
+      R(-0.3, -0.9, 0.6, 1.15, 0.3);  P(() => g.arc(0, -0.05, 0.58, 0, Math.PI));
+      P(() => { g.moveTo(0, 0.53);  g.lineTo(0, 0.9);  g.moveTo(-0.3, 0.9);  g.lineTo(0.3, 0.9); });  break;
+    case "clasica": {                                      // clave de sol
+      g.restore();
+      g.fillStyle = col;  g.font = (1.08 * r) + "px Bravura";  g.textAlign = "left";  g.textBaseline = "alphabetic";
+      g.fillText(String.fromCodePoint(0xE050), cx - 0.36 * r, cy + 0.24 * r);
+      return;
+    }
+    case "disney":                                         // castillo con torres de cuento
+      P(() => { g.moveTo(-0.22, 0.85);  g.lineTo(-0.22, -0.35);  g.lineTo(0, -0.88);  g.lineTo(0.22, -0.35);  g.lineTo(0.22, 0.85); });
+      P(() => { g.moveTo(-0.78, 0.85);  g.lineTo(-0.78, 0.05);  g.lineTo(-0.63, -0.42);  g.lineTo(-0.48, 0.05);  g.lineTo(-0.48, 0.85); });
+      P(() => { g.moveTo(0.78, 0.85);  g.lineTo(0.78, 0.05);  g.lineTo(0.63, -0.42);  g.lineTo(0.48, 0.05);  g.lineTo(0.48, 0.85); });
+      P(() => { g.moveTo(-0.48, 0.38);  g.lineTo(-0.22, 0.38);  g.moveTo(0.22, 0.38);  g.lineTo(0.48, 0.38);  g.moveTo(-0.9, 0.85);  g.lineTo(0.9, 0.85); });
+      P(() => { g.moveTo(-0.1, 0.85);  g.lineTo(-0.1, 0.52);  g.arc(0, 0.52, 0.1, Math.PI, 0);  g.lineTo(0.1, 0.85); });  break;
     case "cine":                                           // claqueta
       R(-0.85, -0.2, 1.7, 1.0, 0.1);  R(-0.85, -0.7, 1.7, 0.4, 0.08);
-      P(() => { for (const x of [-0.4, 0.05, 0.5]) { ctx.moveTo(x, -0.7);  ctx.lineTo(x - 0.22, -0.3); } });  break;
+      P(() => { for (const x of [-0.4, 0.05, 0.5]) { g.moveTo(x, -0.7);  g.lineTo(x - 0.22, -0.3); } });  break;
     case "anime":                                          // auriculares
-      P(() => ctx.arc(0, 0.1, 0.72, Math.PI, 0));  R(-0.9, 0.1, 0.3, 0.6, 0.12);  R(0.6, 0.1, 0.3, 0.6, 0.12);  break;
-    case "jazz": case "nota":                              // corchea
-      ctx.beginPath();  ctx.ellipse(-0.3, 0.55, 0.3, 0.22, -0.4, 0, Math.PI * 2);  ctx.fill();
-      P(() => { ctx.moveTo(-0.04, 0.5);  ctx.lineTo(-0.04, -0.85);  ctx.bezierCurveTo(0.1, -0.5, 0.6, -0.5, 0.55, -0.05); });  break;
+      P(() => g.arc(0, 0.1, 0.72, Math.PI, 0));  R(-0.9, 0.1, 0.3, 0.6, 0.12);  R(0.6, 0.1, 0.3, 0.6, 0.12);  break;
+    case "jazz": case "nota": noteIcon();  break;
     case "infantil": case "estrella":                      // estrella
-      P(() => { for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, k = i % 2 ? 0.4 : 0.92;  ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * k, Math.sin(a) * k + 0.05); } ctx.closePath(); });  break;
+      P(() => { for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, k = i % 2 ? 0.4 : 0.92;  g[i ? "lineTo" : "moveTo"](Math.cos(a) * k, Math.sin(a) * k + 0.05); } g.closePath(); });  break;
+    case "tradicional": case "pandereta":                  // pandereta
+      C(0, 0, 0.8);  C(0, 0, 0.52);
+      for (let k = 0; k < 6; k++) { const a = (k * Math.PI) / 3 + 0.3;  C(Math.cos(a) * 0.66, Math.sin(a) * 0.66, 0.07, true); }  break;
+    case "guitarra":
+      C(-0.2, 0.4, 0.5);  C(-0.2, 0.4, 0.14);
+      P(() => { g.moveTo(0.15, 0.05);  g.lineTo(0.8, -0.65); });  P(() => { g.moveTo(0.7, -0.85);  g.lineTo(0.95, -0.6); });  break;
     case "navidad":                                        // árbol
-      P(() => { ctx.moveTo(0, -0.9);  ctx.lineTo(0.5, -0.25);  ctx.lineTo(0.28, -0.25);  ctx.lineTo(0.7, 0.35);  ctx.lineTo(-0.7, 0.35);  ctx.lineTo(-0.28, -0.25);  ctx.lineTo(-0.5, -0.25);  ctx.closePath(); });
-      P(() => { ctx.moveTo(0, 0.35);  ctx.lineTo(0, 0.85); });  break;
-    case "tradicional":                                    // guitarra
-      P(() => { ctx.arc(-0.2, 0.4, 0.5, 0, Math.PI * 2); });  P(() => { ctx.arc(-0.2, 0.4, 0.14, 0, Math.PI * 2); });
-      P(() => { ctx.moveTo(0.15, 0.05);  ctx.lineTo(0.8, -0.65); });  P(() => { ctx.moveTo(0.7, -0.85);  ctx.lineTo(0.95, -0.6); });  break;
-    default:
-      ctx.beginPath();  ctx.ellipse(-0.3, 0.55, 0.3, 0.22, -0.4, 0, Math.PI * 2);  ctx.fill();
-      P(() => { ctx.moveTo(-0.04, 0.5);  ctx.lineTo(-0.04, -0.85);  ctx.bezierCurveTo(0.1, -0.5, 0.6, -0.5, 0.55, -0.05); });
+      P(() => { g.moveTo(0, -0.9);  g.lineTo(0.5, -0.25);  g.lineTo(0.28, -0.25);  g.lineTo(0.7, 0.35);  g.lineTo(-0.7, 0.35);  g.lineTo(-0.28, -0.25);  g.lineTo(-0.5, -0.25);  g.closePath(); });
+      P(() => { g.moveTo(0, 0.35);  g.lineTo(0, 0.85); });  break;
+    case "rock":                                           // rayo
+      P(() => { g.moveTo(0.15, -0.95);  g.lineTo(-0.55, 0.15);  g.lineTo(-0.05, 0.15);  g.lineTo(-0.2, 0.95);  g.lineTo(0.55, -0.2);  g.lineTo(0.05, -0.2);  g.closePath(); });  break;
+    case "videojuegos":                                    // mando
+      R(-0.92, -0.4, 1.84, 0.95, 0.42);
+      P(() => { g.moveTo(-0.55, 0.07);  g.lineTo(-0.15, 0.07);  g.moveTo(-0.35, -0.13);  g.lineTo(-0.35, 0.27); });
+      C(0.3, -0.02, 0.08, true);  C(0.55, 0.17, 0.08, true);  break;
+    case "himnos":                                         // bandera
+      P(() => { g.moveTo(-0.62, -0.9);  g.lineTo(-0.62, 0.9); });
+      P(() => { g.moveTo(-0.62, -0.8);  g.bezierCurveTo(-0.1, -1.0, 0.3, -0.5, 0.85, -0.72);  g.lineTo(0.85, 0.0);  g.bezierCurveTo(0.3, 0.2, -0.1, -0.3, -0.62, -0.08); });  break;
+    case "religiosa":                                      // cruz
+      P(() => { g.moveTo(0, -0.9);  g.lineTo(0, 0.9);  g.moveTo(-0.5, -0.35);  g.lineTo(0.5, -0.35); });  break;
+    case "country":                                        // sombrero
+      P(() => { g.moveTo(-0.42, 0.42);  g.bezierCurveTo(-0.55, -0.1, -0.42, -0.72, -0.1, -0.66);  g.quadraticCurveTo(0, -0.5, 0.1, -0.66);  g.bezierCurveTo(0.42, -0.72, 0.55, -0.1, 0.42, 0.42); });
+      P(() => { g.moveTo(-0.97, 0.18);  g.bezierCurveTo(-0.7, 0.65, 0.7, 0.65, 0.97, 0.18); });
+      P(() => { g.moveTo(-0.46, 0.2);  g.bezierCurveTo(-0.2, 0.32, 0.2, 0.32, 0.46, 0.2); });  break;
+    case "teatro":                                         // máscaras
+      C(-0.3, -0.15, 0.52);  C(0.32, 0.2, 0.52);
+      C(-0.46, -0.28, 0.06, true);  C(-0.14, -0.28, 0.06, true);  P(() => g.arc(-0.3, -0.12, 0.2, 0.15 * Math.PI, 0.85 * Math.PI));
+      C(0.16, 0.08, 0.06, true);  C(0.48, 0.08, 0.06, true);  P(() => g.arc(0.32, 0.55, 0.18, 1.15 * Math.PI, 1.85 * Math.PI));  break;
+    case "amor":                                           // corazón
+      P(() => { g.moveTo(0, 0.85);  g.bezierCurveTo(-1.1, 0.1, -0.7, -0.8, 0, -0.3);  g.bezierCurveTo(0.7, -0.8, 1.1, 0.1, 0, 0.85); });  break;
+    case "tambor":                                         // tambor con baquetas
+      P(() => { g.ellipse(0, -0.1, 0.72, 0.24, 0, 0, Math.PI * 2); });
+      P(() => { g.moveTo(-0.72, -0.1);  g.lineTo(-0.72, 0.55);  g.ellipse(0, 0.55, 0.72, 0.24, 0, Math.PI, 0, true);  g.lineTo(0.72, -0.1); });
+      P(() => { g.moveTo(-0.4, 0.1);  g.lineTo(-0.15, 0.7);  g.lineTo(0.1, 0.1);  g.lineTo(0.35, 0.7);  g.lineTo(0.45, 0.2); });
+      P(() => { g.moveTo(-0.55, -0.95);  g.lineTo(0.1, -0.4);  g.moveTo(0.55, -0.95);  g.lineTo(-0.1, -0.4); });  break;
+    case "electronica": {                                  // ecualizador
+      const hs = [0.3, 0.6, 0.88, 0.5, 0.25];
+      P(() => { hs.forEach((h, k) => { const x = -0.62 + k * 0.31;  g.moveTo(x, -h);  g.lineTo(x, h); }); });  break;
+    }
+    case "metronomo":                                      // metrónomo
+      P(() => { g.moveTo(-0.55, 0.88);  g.lineTo(-0.25, -0.88);  g.lineTo(0.25, -0.88);  g.lineTo(0.55, 0.88);  g.closePath(); });
+      P(() => { g.moveTo(0, 0.55);  g.lineTo(0.3, -0.6); });  C(0.22, -0.3, 0.09, true);  break;
+    case "animales":                                       // huella
+      g.beginPath();  g.ellipse(0, 0.38, 0.42, 0.34, 0, 0, Math.PI * 2);  g.stroke();
+      C(-0.62, -0.08, 0.17);  C(-0.24, -0.5, 0.17);  C(0.24, -0.5, 0.17);  C(0.62, -0.08, 0.17);  break;
+    case "naturaleza":                                     // hoja
+      P(() => { g.moveTo(-0.72, 0.72);  g.bezierCurveTo(-0.85, -0.3, 0, -0.9, 0.85, -0.82);  g.bezierCurveTo(0.95, 0, 0.2, 0.85, -0.72, 0.72);  g.closePath(); });
+      P(() => { g.moveTo(-0.72, 0.72);  g.lineTo(0.35, -0.4); });  break;
+    default: noteIcon();
   }
-  ctx.restore();
+  g.restore();
 }
 const melInCat = () => melCat !== null && !melDirect;
 const catOf = (id) => melCats.find((c) => c.id === id);
@@ -1725,11 +1787,11 @@ function drawMelodies() {
     text("Elige una categoría", x + 2, y + 6, 13, AC.dim, "left");  y += 26;
     const ch = clamp(L.vh * 0.1, 68, 86);
     melCats.forEach((c, i) => {
-      const id = "cat_" + i, hov = hoverBtn === id, col = c.color || CAT_COL[c.icono] || AC.accT, cy = y + ch / 2, tile = ch * 0.68;
+      const id = "cat_" + i, hov = hoverBtn === id, ic = resolveIcon(c), col = c.color || CAT_COL[ic] || AC.accT, cy = y + ch / 2, tile = ch * 0.68;
       ctx.fillStyle = hov ? accA(0.25) : AC.card;  rr(x, y, w, ch, 12);  ctx.fill();
       ctx.strokeStyle = hov ? AC.accV : AC.edge;  ctx.lineWidth = 1.2;  ctx.stroke();
       ctx.fillStyle = rgbaHex(col, 0.16);  rr(x + 12, cy - tile / 2, tile, tile, 12);  ctx.fill();
-      catIcon(c.icono, x + 12 + tile / 2, cy, tile * 0.34, col);
+      catIcon(ic, x + 12 + tile / 2, cy, tile * 0.34, col);
       const tx = x + 12 + tile + 14;
       text(c.nombre, tx, y + ch * (c.desc ? 0.38 : 0.5), clamp(ch * 0.26, 16, 21), AC.txt, "left", "", x + w - tx - 70);
       if (c.desc) text(c.desc, tx, y + ch * 0.7, clamp(ch * 0.18, 12, 14), AC.dim, "left", "", x + w - tx - 70);
