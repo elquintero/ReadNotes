@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.3.1", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.4.0", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -657,7 +657,8 @@ function act(id) {
   if (id === "kb_lo" || id === "kb_hi") { kbOct = clamp(kbOct + (id === "kb_lo" ? -1 : 1), 1, 8 - (L.kb ? L.kb.octs : 1));  dirty = true;  return; }
   if (id === "ml_retry") { loadMelList(true); return; }
   if (id.startsWith("mel_")) { openSong(int(id.slice(4), -1)); return; }
-  if (id === "mode_5") { go("melodies"); return; }
+  if (id === "mode_5") { melCat = melDirect || null;  go("melodies"); return; }
+  if (id.startsWith("cat_")) { const c = melCats[int(id.slice(4), -1)];  if (c) { melCat = c.id;  scrollY = 0;  dirty = true; }  return; }
   if (id.startsWith("mode_")) { S.mode = clamp(int(id.slice(5), 0), 0, 4); saveSettings(); startSession(false); return; }
   if (id.startsWith("tf_")) { ST.clef = int(id.slice(3), -1); computeStats(); dirty = true; return; }
   if (id.startsWith("ln_")) { const p = id.split("_"), n = clamp(int(p[2], 0), 0, 4); if (p[1] === "1") S.lf = n; else S.lg = n; saveSettings(); layout(); pianoPreload(pianoMidis(S.mode)); dirty = true; return; }
@@ -668,7 +669,7 @@ function act(id) {
   switch (id) {
     case "m_play": go("clefs"); return;
     case "m_stats": ST.confirm = 0; computeStats(); go("stats"); return;
-    case "back": if (scene === "game" || scene === "summary") go(playMode === 5 && mel ? "melodies" : "clefs"); else if (scene === "melodies") go("clefs"); else go("menu"); return;
+    case "back": if (scene === "game" || scene === "summary") go(playMode === 5 && mel ? "melodies" : "clefs"); else if (scene === "melodies") { if (melInCat()) { melCat = null;  scrollY = 0;  dirty = true; } else go("clefs"); } else go("menu"); return;
     case "g_menu": case "s_menu": go("menu"); return;
     case "reset": if (scene === "game") startSession(); return;
     case "s_review": if (sum) startSession(true, clefsOf(sum.rec.m)); return;
@@ -950,7 +951,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) wake
 addEventListener("keyup", () => { if (scene === "game" && playMode === 5) melRelease(); });   // el sistema lo libera al ocultar la app
 // Botón/gesto "atrás" del móvil: una entrada de historial por nivel de pantalla.
 // Niveles: menú 0 · claves/estadísticas 1 · partida/resumen 2 · ajustes suma 1.
-const depth = () => (scene === "menu" ? 0 : scene === "melodies" ? 2 : scene === "game" || scene === "summary" ? (playMode === 5 ? 3 : 2) : 1) + (settingsOpen ? 1 : 0);
+const depth = () => (scene === "menu" ? 0 : scene === "melodies" ? (melInCat() ? 3 : 2) : scene === "game" || scene === "summary" ? (playMode === 5 ? (melInCat() ? 4 : 3) : 2) : 1) + (settingsOpen ? 1 : 0);
 let histD = 0, popLock = false, popPending = false;
 try {
   const hs = history.state;
@@ -1437,11 +1438,13 @@ const MEL_GRACE = 0.12;     // segundos de margen (un toque rápido vale en las 
 const MEL_MAXBPM = 90;      // tempo máximo de práctica (si la partitura va más rápido se limita)
 let mel = null, hold = null, melDone = false, melHoldMs = 0;
 let melList = null, melState = "idle", melErr = "", melBusy = -1;
+let melCats = [], melCat = null, melDirect = "";     // categorías, categoría abierta (null = pantalla de categorías) y atajo si solo hay una
 const SN = () => (playMode === 5 && mel ? mel.notes.length : SESSION_N);
 const melSec = (beats) => (beats * 60) / mel.bpm;
 const melNeed = (n) => (S.melHold ? Math.max(0, MEL_HOLD * melSec(n.beats) - MEL_GRACE) : 0);
 
-/* ---------- lista de canciones ---------- */
+/* ---------- lista de canciones y categorías ---------- */
+const CAT_COL = { pop: "#e0457b", clasica: "#5b95f5", disney: "#e8a93a", cine: "#9a7cf5", anime: "#3fb87f", jazz: "#b86ae6", navidad: "#e0524d", infantil: "#f0a030", tradicional: "#d97b4a", estrella: "#e8c030" };
 async function loadMelList(force) {
   if (melState === "loading" || (melState === "ok" && !force)) return;
   melState = "loading";  melErr = "";  dirty = true;
@@ -1452,15 +1455,21 @@ async function loadMelList(force) {
     const arr = Array.isArray(j) ? j : (j.melodias || j.canciones || []);
     melList = arr.filter((s) => s && s.archivo).map((s, i) => ({
       id: String(s.id !== undefined ? s.id : i), titulo: String(s.titulo || s.archivo), autor: s.autor ? String(s.autor) : "",
-      archivo: String(s.archivo), tempo: +s.tempo || 0
+      archivo: String(s.archivo), tempo: +s.tempo || 0, cat: s.categoria ? String(s.categoria) : "otras"
     }));
+    // categorías declaradas en el json + las que usen las canciones sin declarar; solo se muestran las que tienen canciones
+    const decl = (!Array.isArray(j) && Array.isArray(j.categorias) ? j.categorias : []).filter((c) => c && c.id);
+    const cats = decl.map((c) => ({ id: String(c.id), nombre: String(c.nombre || c.id), icono: String(c.icono || c.id), desc: c.descripcion ? String(c.descripcion) : "", color: c.color ? String(c.color) : "" }));
+    for (const s of melList) if (!cats.some((c) => c.id === s.cat)) cats.push({ id: s.cat, nombre: s.cat === "otras" ? "Otras melodías" : s.cat.charAt(0).toUpperCase() + s.cat.slice(1), icono: s.cat === "otras" ? "nota" : s.cat, desc: "", color: "" });
+    melCats = cats.filter((c) => melList.some((s) => s.cat === c.id)).map((c) => ({ ...c, n: melList.filter((s) => s.cat === c.id).length }));
+    melDirect = melCats.length === 1 ? melCats[0].id : "";            // con una sola categoría se va directo a las canciones
+    if (melDirect && melCat === null) melCat = melDirect;
     melState = "ok";
   } catch (e) {
     melState = "error";  melErr = "No se pudo cargar la lista de melodías. Comprueba la conexión.";
   }
   dirty = true;
 }
-
 /* ---------- .mxl = ZIP con el MusicXML dentro ---------- */
 async function unzipEntry(buf, wanted) {
   if (typeof DecompressionStream === "undefined") throw new Error("este navegador no puede abrir .mxl");
@@ -1652,9 +1661,53 @@ function drawShaped(step, x, col, clef, n) {
   }
 }
 
-/* ---------- pantalla: lista de melodías ---------- */
+/* ---------- iconos de categoría (vectoriales, estilo línea) ---------- */
+function catIcon(id, cx, cy, r, col) {
+  ctx.save();  ctx.translate(cx, cy);  ctx.scale(r, r);
+  ctx.strokeStyle = col;  ctx.fillStyle = col;  ctx.lineWidth = 0.13;  ctx.lineCap = "round";  ctx.lineJoin = "round";
+  const P = (fn) => { ctx.beginPath();  fn();  ctx.stroke(); };
+  const R = (x, y, w, h, k) => { ctx.beginPath();  ctx.moveTo(x + k, y);  ctx.arcTo(x + w, y, x + w, y + h, k);  ctx.arcTo(x + w, y + h, x, y + h, k);  ctx.arcTo(x, y + h, x, y, k);  ctx.arcTo(x, y, x + w, y, k);  ctx.closePath();  ctx.stroke(); };
+  switch (id) {
+    case "pop":                                            // micrófono
+      R(-0.3, -0.9, 0.6, 1.15, 0.3);  P(() => ctx.arc(0, -0.05, 0.58, 0, Math.PI));
+      P(() => { ctx.moveTo(0, 0.53);  ctx.lineTo(0, 0.9);  ctx.moveTo(-0.3, 0.9);  ctx.lineTo(0.3, 0.9); });  break;
+    case "clasica":                                        // piano de cola
+      R(-0.9, -0.1, 1.8, 0.95, 0.12);
+      P(() => { ctx.moveTo(-0.9, -0.1);  ctx.bezierCurveTo(-0.9, -0.8, 0.3, -0.9, 0.55, -0.1); });
+      P(() => { for (const x of [-0.45, 0, 0.45]) { ctx.moveTo(x, 0.3);  ctx.lineTo(x, 0.85); } });
+      for (const x of [-0.45, 0, 0.45]) ctx.fillRect(x - 0.09, -0.1, 0.18, 0.42);  break;
+    case "disney":                                         // castillo
+      R(-0.75, -0.15, 1.5, 1.0, 0.06);  R(-0.75, -0.55, 0.38, 0.45, 0.05);  R(0.37, -0.55, 0.38, 0.45, 0.05);  R(-0.2, -0.85, 0.4, 0.75, 0.05);
+      P(() => { ctx.moveTo(-0.2, 0.85);  ctx.lineTo(-0.2, 0.5);  ctx.arc(0, 0.5, 0.2, Math.PI, 0);  ctx.lineTo(0.2, 0.85); });  break;
+    case "cine":                                           // claqueta
+      R(-0.85, -0.2, 1.7, 1.0, 0.1);  R(-0.85, -0.7, 1.7, 0.4, 0.08);
+      P(() => { for (const x of [-0.4, 0.05, 0.5]) { ctx.moveTo(x, -0.7);  ctx.lineTo(x - 0.22, -0.3); } });  break;
+    case "anime":                                          // auriculares
+      P(() => ctx.arc(0, 0.1, 0.72, Math.PI, 0));  R(-0.9, 0.1, 0.3, 0.6, 0.12);  R(0.6, 0.1, 0.3, 0.6, 0.12);  break;
+    case "jazz": case "nota":                              // corchea
+      ctx.beginPath();  ctx.ellipse(-0.3, 0.55, 0.3, 0.22, -0.4, 0, Math.PI * 2);  ctx.fill();
+      P(() => { ctx.moveTo(-0.04, 0.5);  ctx.lineTo(-0.04, -0.85);  ctx.bezierCurveTo(0.1, -0.5, 0.6, -0.5, 0.55, -0.05); });  break;
+    case "infantil": case "estrella":                      // estrella
+      P(() => { for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, k = i % 2 ? 0.4 : 0.92;  ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * k, Math.sin(a) * k + 0.05); } ctx.closePath(); });  break;
+    case "navidad":                                        // árbol
+      P(() => { ctx.moveTo(0, -0.9);  ctx.lineTo(0.5, -0.25);  ctx.lineTo(0.28, -0.25);  ctx.lineTo(0.7, 0.35);  ctx.lineTo(-0.7, 0.35);  ctx.lineTo(-0.28, -0.25);  ctx.lineTo(-0.5, -0.25);  ctx.closePath(); });
+      P(() => { ctx.moveTo(0, 0.35);  ctx.lineTo(0, 0.85); });  break;
+    case "tradicional":                                    // guitarra
+      P(() => { ctx.arc(-0.2, 0.4, 0.5, 0, Math.PI * 2); });  P(() => { ctx.arc(-0.2, 0.4, 0.14, 0, Math.PI * 2); });
+      P(() => { ctx.moveTo(0.15, 0.05);  ctx.lineTo(0.8, -0.65); });  P(() => { ctx.moveTo(0.7, -0.85);  ctx.lineTo(0.95, -0.6); });  break;
+    default:
+      ctx.beginPath();  ctx.ellipse(-0.3, 0.55, 0.3, 0.22, -0.4, 0, Math.PI * 2);  ctx.fill();
+      P(() => { ctx.moveTo(-0.04, 0.5);  ctx.lineTo(-0.04, -0.85);  ctx.bezierCurveTo(0.1, -0.5, 0.6, -0.5, 0.55, -0.05); });
+  }
+  ctx.restore();
+}
+const melInCat = () => melCat !== null && !melDirect;
+const catOf = (id) => melCats.find((c) => c.id === id);
+
+/* ---------- pantalla: categorías y lista de melodías ---------- */
 function drawMelodies() {
-  drawBar("Melodías", { back: "back", actions: [{ id: "open", icon: "gear" }] });
+  const cat = melCat !== null ? catOf(melCat) : null;
+  drawBar(melInCat() && cat ? cat.nombre : "Melodías", { back: "back", actions: [{ id: "open", icon: "gear" }] });
   const top = L.top + L.barH, w = Math.min(L.cw - L.m * 4, 520), x = L.cx0 + (L.cw - w) / 2, cx = x + w / 2;
   clipRect(0, top, L.vw, L.vh - top);
   let y = top + L.m * 1.5 + 8 - scrollY;
@@ -1666,29 +1719,48 @@ function drawMelodies() {
     actionBtn(cx - bw / 2, y + 74, bw, 46, "Reintentar", true, hoverBtn === "ml_retry");
     visHit("ml_retry", cx - bw / 2, y + 74, bw, 46, top);
     y += 140;
-  } else {
+  } else if (!melList.length) {
+    text("La lista está vacía: añade canciones a melodias/melodias.json", cx, y + 50, 14, AC.dim, "center", "", w);  y += 100;
+  } else if (melCat === null) {                              // 1) categorías
+    text("Elige una categoría", x + 2, y + 6, 13, AC.dim, "left");  y += 26;
+    const ch = clamp(L.vh * 0.1, 68, 86);
+    melCats.forEach((c, i) => {
+      const id = "cat_" + i, hov = hoverBtn === id, col = c.color || CAT_COL[c.icono] || AC.accT, cy = y + ch / 2, tile = ch * 0.68;
+      ctx.fillStyle = hov ? accA(0.25) : AC.card;  rr(x, y, w, ch, 12);  ctx.fill();
+      ctx.strokeStyle = hov ? AC.accV : AC.edge;  ctx.lineWidth = 1.2;  ctx.stroke();
+      ctx.fillStyle = rgbaHex(col, 0.16);  rr(x + 12, cy - tile / 2, tile, tile, 12);  ctx.fill();
+      catIcon(c.icono, x + 12 + tile / 2, cy, tile * 0.34, col);
+      const tx = x + 12 + tile + 14;
+      text(c.nombre, tx, y + ch * (c.desc ? 0.38 : 0.5), clamp(ch * 0.26, 16, 21), AC.txt, "left", "", x + w - tx - 70);
+      if (c.desc) text(c.desc, tx, y + ch * 0.7, clamp(ch * 0.18, 12, 14), AC.dim, "left", "", x + w - tx - 70);
+      text(String(c.n), x + w - 46, cy, clamp(ch * 0.22, 13, 16), AC.dim, "right");
+      ctx.strokeStyle = hov ? AC.accT : "#777";  ctx.lineWidth = 2;  ctx.lineCap = "round";
+      ctx.beginPath();  ctx.moveTo(x + w - 26, cy - 8);  ctx.lineTo(x + w - 18, cy);  ctx.lineTo(x + w - 26, cy + 8);  ctx.stroke();
+      ctx.lineCap = "butt";
+      visHit(id, x, y, w, ch, top);
+      y += ch + 12;
+    });
+  } else {                                                   // 2) canciones de la categoría
     if (melErr) { text(melErr, x + 2, y + 6, 13, AC.bad, "left", "", w);  y += 26; }
-    if (!melList.length) { text("La lista está vacía: añade canciones a melodias/melodias.json", cx, y + 50, 14, AC.dim, "center", "", w);  y += 100; }
-    else {
-      text("Elige una canción para tocarla", x + 2, y + 6, 13, AC.dim, "left");  y += 26;
-      const ch = clamp(L.vh * 0.095, 60, 78);
-      melList.forEach((s, i) => {
-        const id = "mel_" + i, hov = hoverBtn === id, busy = melBusy === i;
-        ctx.fillStyle = hov ? accA(0.25) : AC.card;  rr(x, y, w, ch, 12);  ctx.fill();
-        ctx.strokeStyle = hov || busy ? AC.accV : AC.edge;  ctx.lineWidth = 1.2;  ctx.stroke();
-        const u = ch * 0.1, cy = y + ch / 2, ix = x + ch * 0.4;
-        glyph(QUARTER_UP, ix - u * 0.6, cy + u * 2, clefTxt(0), 4 * u);
-        const tx = x + ch * 0.95;
-        text(s.titulo, tx, y + ch * (s.autor || busy ? 0.4 : 0.5), clamp(ch * 0.27, 15, 20), AC.txt, "left", "", x + w - tx - 40);
-        if (busy) text("Cargando partitura…", tx, y + ch * 0.7, clamp(ch * 0.2, 12, 14), AC.accT, "left");
-        else if (s.autor) text(s.autor, tx, y + ch * 0.7, clamp(ch * 0.2, 12, 14), AC.dim, "left", "", x + w - tx - 40);
-        ctx.strokeStyle = hov ? AC.accT : "#777";  ctx.lineWidth = 2;  ctx.lineCap = "round";
-        ctx.beginPath();  ctx.moveTo(x + w - 26, cy - 8);  ctx.lineTo(x + w - 18, cy);  ctx.lineTo(x + w - 26, cy + 8);  ctx.stroke();
-        ctx.lineCap = "butt";
-        visHit(id, x, y, w, ch, top);
-        y += ch + 12;
-      });
-    }
+    text("Elige una canción para tocarla", x + 2, y + 6, 13, AC.dim, "left");  y += 26;
+    const ch = clamp(L.vh * 0.095, 60, 78);
+    melList.forEach((s, i) => {
+      if (s.cat !== melCat) return;
+      const id = "mel_" + i, hov = hoverBtn === id, busy = melBusy === i;
+      ctx.fillStyle = hov ? accA(0.25) : AC.card;  rr(x, y, w, ch, 12);  ctx.fill();
+      ctx.strokeStyle = hov || busy ? AC.accV : AC.edge;  ctx.lineWidth = 1.2;  ctx.stroke();
+      const u = ch * 0.1, cy = y + ch / 2, ix = x + ch * 0.4;
+      glyph(QUARTER_UP, ix - u * 0.6, cy + u * 2, clefTxt(0), 4 * u);
+      const tx = x + ch * 0.95;
+      text(s.titulo, tx, y + ch * (s.autor || busy ? 0.4 : 0.5), clamp(ch * 0.27, 15, 20), AC.txt, "left", "", x + w - tx - 40);
+      if (busy) text("Cargando partitura…", tx, y + ch * 0.7, clamp(ch * 0.2, 12, 14), AC.accT, "left");
+      else if (s.autor) text(s.autor, tx, y + ch * 0.7, clamp(ch * 0.2, 12, 14), AC.dim, "left", "", x + w - tx - 40);
+      ctx.strokeStyle = hov ? AC.accT : "#777";  ctx.lineWidth = 2;  ctx.lineCap = "round";
+      ctx.beginPath();  ctx.moveTo(x + w - 26, cy - 8);  ctx.lineTo(x + w - 18, cy);  ctx.lineTo(x + w - 26, cy + 8);  ctx.stroke();
+      ctx.lineCap = "butt";
+      visHit(id, x, y, w, ch, top);
+      y += ch + 12;
+    });
   }
   ctx.restore();
   maxScroll = Math.max(0, y + scrollY - L.bot + L.m);
