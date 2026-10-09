@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.2.2", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.3.0", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -146,6 +146,7 @@ S.melHold = raw.melHold !== false;
 S.layoutP = raw.layoutP === 0 ? 0 : 1;          // 0 = círculo · 1 = teclado virtual (por defecto)
 S.layoutL = raw.layoutL === 0 ? 0 : 1;
 S.octVerify = raw.octVerify === true;
+S.mic = raw.mic === true;
   S.skin = raw.skin === 1 ? 1 : 0;
   S.accent = int(raw.accent, 0) >= 0 && int(raw.accent, 0) < ACCENTS.length ? int(raw.accent, 0) : 0;   // un color guardado que ya no existe vuelve al primero
 S.midi = raw.midi === true;
@@ -534,7 +535,7 @@ function pauseEnd() {
 }
 let savedScroll = 0;
 function setSettings(v) {
-  hold = null;
+  hold = null;  setTimeout(micSync, 0);
   if (v === settingsOpen) return;
   startTrans(v ? 1 : -1);
   settingsOpen = v;
@@ -651,6 +652,8 @@ const a = mod(Math.atan2(vy, vx) + Math.PI / 2 + seg / 2, Math.PI * 2);
 return Math.floor(a / seg) % 7;
 }
 function act(id) {
+  if (id === "mic_on") { micEnable();  return; }
+  if (id === "mic_off") { S.mic = false;  micErr = "";  saveSettings();  micSync();  dirty = true;  return; }
   if (id === "kb_lo" || id === "kb_hi") { kbOct = clamp(kbOct + (id === "kb_lo" ? -1 : 1), 1, 8 - (L.kb ? L.kb.octs : 1));  dirty = true;  return; }
   if (id === "ml_retry") { loadMelList(true); return; }
   if (id.startsWith("mel_")) { openSong(int(id.slice(4), -1)); return; }
@@ -758,6 +761,7 @@ const rows = [
 ];
 if (navigator.requestMIDIAccess) rows.push({ k: "sw", label: "Teclado MIDI", value: S.midi ? "Habilitado" : "Deshabilitado", on: S.midi, id: S.midi ? "midi_off" : "midi_on" });
 rows.push({ k: "sw", label: "Práctica adaptativa", value: S.adapt ? "Más práctica en tus notas débiles" : "Notas totalmente al azar", on: S.adapt, id: S.adapt ? "adapt_off" : "adapt_on" });
+rows.push({ k: "sw", label: "Micrófono", value: S.mic ? "Escucha la nota que cantas o tocas durante la partida" : micErr || "Responde con la voz o un instrumento", on: S.mic, id: S.mic ? "mic_off" : "mic_on" });
 rows.push({ k: "sw", label: "Verificación de octavas", value: S.octVerify ? "Se comprueba la octava exacta de la nota" : "Las notas introducidas pueden estar en cualquier octava", on: S.octVerify, id: S.octVerify ? "oct_off" : "oct_on" });
 rows.push({ k: "hd", label: "Apariencia" });
 rows.push({ k: "tap", label: "Tema de la aplicación", value: S.skin === 1 ? "Oscuro" : "Clásico", id: S.skin === 1 ? "skin_0" : "skin_1" });
@@ -783,6 +787,7 @@ return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 cv.addEventListener("pointerdown", (e) => {
   e.preventDefault();
+  if (!S.haptic && navigator.vibrate) { try { navigator.vibrate(0); } catch (_) {} }
   audio();
   lastMoved = false;
   pointer = toLocal(e);
@@ -1038,7 +1043,7 @@ navigator.requestMIDIAccess().then((a) => { midiAccess = a; a.onstatechange = bi
 }
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 // Android vibra por sí solo en una pulsación larga: se evita en las melodías (no afecta a la opción de vibraciones)
-for (const ev of ["touchstart", "touchmove"]) cv.addEventListener(ev, (e) => { if (scene === "game" && playMode === 5 && !settingsOpen) e.preventDefault(); }, { passive: false });
+for (const ev of ["touchstart", "touchmove"]) cv.addEventListener(ev, (e) => { if (!settingsOpen) e.preventDefault(); }, { passive: false });
 document.addEventListener("gesturestart", (e) => e.preventDefault());
 function hsv(h, s, v) {
 const f = (n) => { const k = (n + h * 6) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
@@ -1422,7 +1427,7 @@ function go(s) {
   if (s === "clefs") { lnOpen = [false, false, false, false];  lnT = [0, 0, 0, 0];  pianoPreload(pianoMidis(S.mode, isKeyMode(S.mode) ? keyOf(S.mode - 3, S.klv[S.mode - 3]) : null)); }
   if (s === "melodies") { melErr = "";  loadMelList(); }
   hold = null;
-  syncHist();  wakeSync();
+  syncHist();  wakeSync();  micSync();
 }
 /* ===================== MELODÍAS (v1.1.0) ===================== */
 // Carpeta "melodias/" del repositorio: melodias.json (lista) + una partitura .mxl por canción.
@@ -1746,6 +1751,123 @@ function drawKeyboard() {
     });
   }
 }
+
+/* ===================== MICRÓFONO (v1.3.0) ===================== */
+// Detecta la nota que cantas o tocas (algoritmo YIN) y la responde como si pulsaras esa tecla.
+const MIC = { ctx: null, an: null, src: null, stream: null, buf: null, timer: 0, run: false };
+let micErr = "", micMuteUntil = 0, micLevel = 0, micShow = "", micShowT = 0;
+let micSt = { cand: -1, n: 0, lock: -1, quiet: 0 };
+const MIC_GATE = 0.012;                                   // volumen mínimo (RMS) para considerar que hay sonido
+const AUDIO_OPTS = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
+// mientras suena la propia app (piano, avisos) el micrófono no escucha: evita que se conteste solo
+{
+  const _tone = tone, _sample = playSample;
+  tone = function (...a) { micMuteUntil = performance.now() + 900;  return _tone.apply(this, a); };
+  playSample = function (...a) { micMuteUntil = performance.now() + 1100;  return _sample.apply(this, a); };
+}
+function midiName(m) {
+  const pc = mod(m, 12), idx = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6][pc], black = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0][pc];
+  return nameOf(idx) + (black ? "♯" : "") + (Math.floor(m / 12) - 1);
+}
+function yinPitch(buf, sr) {
+  const W = 2048, maxTau = Math.min(Math.floor(sr / 60), buf.length - W - 1), minTau = Math.max(2, Math.floor(sr / 2200));
+  const d = new Float32Array(maxTau + 1), dn = new Float32Array(maxTau + 1);
+  for (let tau = 1; tau <= maxTau; tau++) {
+    let s = 0;
+    for (let i = 0; i < W; i++) { const x = buf[i] - buf[i + tau]; s += x * x; }
+    d[tau] = s;
+  }
+  let run = 0;
+  dn[0] = 1;
+  for (let tau = 1; tau <= maxTau; tau++) { run += d[tau];  dn[tau] = run ? (d[tau] * tau) / run : 1; }
+  let tau = -1;
+  for (let t = minTau; t < maxTau; t++) {
+    if (dn[t] < 0.15) { while (t + 1 < maxTau && dn[t + 1] < dn[t]) t++;  tau = t;  break; }
+  }
+  if (tau < 1 || tau >= maxTau) return 0;
+  const a = dn[tau - 1], b = dn[tau], c = dn[tau + 1], den = a - 2 * b + c;
+  return sr / (tau + (den ? (0.5 * (a - c)) / den : 0));
+}
+async function micEnable() {                              // se pide el permiso al activar la opción
+  try {
+    const st = await navigator.mediaDevices.getUserMedia(AUDIO_OPTS);
+    st.getTracks().forEach((t) => t.stop());
+    S.mic = true;  micErr = "";
+  } catch (e) {
+    S.mic = false;
+    micErr = e && e.name === "NotAllowedError" ? "Permiso denegado: actívalo en los ajustes del navegador" : "No se pudo acceder al micrófono";
+  }
+  saveSettings();  micSync();  dirty = true;
+}
+function micSync() {                                      // escucha solo durante la partida
+  const want = !!(S.mic && scene === "game" && !settingsOpen && !document.hidden && navigator.mediaDevices);
+  if (want && !MIC.run) micStart(); else if (!want && MIC.run) micStop();
+}
+async function micStart() {
+  MIC.run = true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(AUDIO_OPTS);
+    if (!MIC.run) { stream.getTracks().forEach((t) => t.stop());  return; }   // se canceló mientras se pedía el permiso
+    const AC2 = window.AudioContext || window.webkitAudioContext;
+    MIC.ctx = new AC2();
+    if (MIC.ctx.state === "suspended") await MIC.ctx.resume().catch(() => {});
+    MIC.src = MIC.ctx.createMediaStreamSource(stream);
+    MIC.an = MIC.ctx.createAnalyser();  MIC.an.fftSize = 4096;
+    MIC.src.connect(MIC.an);
+    MIC.stream = stream;  MIC.buf = new Float32Array(MIC.an.fftSize);
+    micSt = { cand: -1, n: 0, lock: -1, quiet: 0 };
+    MIC.timer = setInterval(micTick, 50);
+    micErr = "";
+  } catch (e) {
+    MIC.run = false;  S.mic = false;
+    micErr = e && e.name === "NotAllowedError" ? "Permiso denegado: actívalo en los ajustes del navegador" : "No se pudo acceder al micrófono";
+    saveSettings();
+  }
+  dirty = true;
+}
+function micStop() {
+  MIC.run = false;  clearInterval(MIC.timer);
+  if (MIC.stream) MIC.stream.getTracks().forEach((t) => t.stop());
+  if (MIC.ctx) try { MIC.ctx.close(); } catch (e) {}
+  MIC.ctx = MIC.an = MIC.src = MIC.stream = MIC.buf = null;
+  micShow = "";  dirty = true;
+}
+function micTick() {
+  if (!MIC.an || scene !== "game" || settingsOpen) return;
+  const now = performance.now(), buf = MIC.buf, st = micSt;
+  MIC.an.getFloatTimeDomainData(buf);
+  let s = 0;
+  for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+  micLevel = Math.sqrt(s / buf.length);
+  if (now < micMuteUntil) { st.cand = -1;  st.n = 0;  return; }
+  if (micLevel < MIC_GATE) {                              // silencio: se libera la nota anterior
+    st.cand = -1;  st.n = 0;  st.quiet++;
+    if (st.quiet >= 2) { st.lock = -1;  if (playMode === 5 && hold) melRelease(); }
+    if (micShow) { micShow = "";  dirty = true; }
+    return;
+  }
+  st.quiet = 0;
+  const f = yinPitch(buf, MIC.ctx.sampleRate);
+  if (!f) { st.cand = -1;  st.n = 0;  return; }
+  const m = Math.round(69 + 12 * Math.log2(f / 440));
+  if (m < 36 || m > 100) return;
+  const nm = midiName(m);
+  if (nm !== micShow) { micShow = nm;  dirty = true; }
+  micShowT = now;
+  if (m === st.lock) { st.cand = -1;  return; }           // misma nota ya contestada: hay que dejar de sonar o cambiar de nota
+  if (m === st.cand) st.n++; else { st.cand = m;  st.n = 1; }
+  if (st.n >= 3) {                                        // nota estable ~150 ms
+    st.lock = m;  st.cand = -1;  st.n = 0;
+    if (playMode === 5 && hold) melRelease();
+    submit(-1, { midi: m });
+  }
+}
+function drawMicHint() {
+  if (!MIC.run || msgT > 0 || scene !== "game") return;
+  const y = L.msgY, big = clamp(L.msgH * 0.5, 13, 18);
+  text(micShow ? "♪ " + micShow : "Escuchando…", L.msgX, y, big, micShow ? AC.accT : AC.dim, "center");
+}
+document.addEventListener("visibilitychange", () => micSync());
 
 const darkUI = () => S.skin === 1 || scene !== "game";
 const noteLabel = (step) => nameOf(mod(step, 7)) + (4 + Math.floor(step / 7));
@@ -2268,6 +2390,7 @@ if (S.skin !== 1) drawPaper();
 drawStaff();
 drawNotes();
 drawMessage();
+drawMicHint();
 if (L.kb) drawKeyboard(); else drawWheel();
 } else {
 ctx.fillStyle = AC.bg;  ctx.fillRect(0, 0, L.vw, L.vh);
