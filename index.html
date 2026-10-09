@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.1.1", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.2.0", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -143,6 +143,9 @@ S.piano  = raw.piano !== false;
 S.vol    = clamp(int(raw.vol, 7), 0, 10);
 S.haptic = raw.haptic !== false;
 S.melHold = raw.melHold !== false;
+S.layoutP = raw.layoutP === 0 ? 0 : 1;          // 0 = círculo · 1 = teclado virtual (por defecto)
+S.layoutL = raw.layoutL === 0 ? 0 : 1;
+S.octVerify = raw.octVerify === true;
   S.skin = raw.skin === 1 ? 1 : 0;
   S.accent = int(raw.accent, 0) >= 0 && int(raw.accent, 0) < ACCENTS.length ? int(raw.accent, 0) : 0;   // un color guardado que ya no existe vuelve al primero
 S.midi = raw.midi === true;
@@ -205,8 +208,26 @@ const geo = noteGeometry();
 const msgH = clamp(Math.round(vh * 0.06), 28, 44);
 const barH = clamp(Math.round(vh * 0.075), 50, 60);
 const hh = barH + Math.round(fs * 2.3);
-let sp, paper, wheelD, wheelCx, wheelCy, msgX, msgY, ringR = null;
-if (!land) {
+let sp, paper, wheelD, wheelCx, wheelCy, msgX, msgY, ringR = null, kbR = null;
+const kbOn = (land ? S.layoutL : S.layoutP) === 1;
+if (kbOn) {                                          // teclado virtual: de borde a borde, abajo
+  const strip = S.octVerify ? clamp(Math.round(vh * 0.05), 30, 40) : 0, innerW = cw - 2 * m;
+  if (!land) {
+    const kbH = clamp(Math.min(vh * 0.4, cw * 1.05), 160, 560) + strip;
+    sp = clamp(innerW / geo.fit, 10, 36);
+    while (sp > 10 && (bot - top) - hh - total * sp - msgH - kbH - m < 0) sp -= 0.5;
+    paper = { x: cx0 + m, y: top + hh, w: innerW, h: total * sp };
+    kbR = { x: cx0, y: bot - kbH, w: cw, h: kbH, octs: 1, strip };
+  } else {
+    const kbH = clamp(vh * 0.36, 96, 240) + strip;
+    sp = clamp(Math.min(innerW / geo.fit, ((bot - top) - hh - msgH - kbH - m) / total), 10, 36);
+    const py = top + hh + Math.max(0, ((bot - kbH - m) - (top + hh) - total * sp - msgH) / 2);
+    paper = { x: cx0 + m, y: py, w: innerW, h: total * sp };
+    kbR = { x: cx0, y: bot - kbH, w: cw, h: kbH, octs: 2, strip };
+  }
+  msgX = cx0 + cw / 2;  msgY = paper.y + paper.h + msgH / 2;
+  wheelD = 100;  wheelCx = cx0 + cw / 2;  wheelCy = kbR.y - 60;
+} else if (!land) {
 const innerW = cw - 2 * m;
 sp = clamp(innerW / geo.fit, 10, 36);
 const minWheel = Math.min(innerW, vh * 0.36);
@@ -234,7 +255,7 @@ msgX = paper.x + paper.w / 2;  msgY = paper.y + paper.h + msgH / 2;
 wheelCx = cx0 + cw - m - wheelD / 2;
 wheelCy = top + hh + ((bot - top) - hh) / 2;
 }
-if (S.skin === 1 || curKey) {
+if (!kbOn && (S.skin === 1 || curKey)) {
   if (!land) {
     const t2 = paper.y + paper.h + msgH;
     ringR = Math.max(40, Math.min(cw * 0.375, (bot - t2 - m) / 2 * 0.8));
@@ -247,9 +268,9 @@ vw, vh, dpr, land, cw, cx0, top, bot, m, btnH, fs, titleFs, hh, barH, msgH, sp, 
 x0: paper.x + 0.5 * sp,
 x1: paper.x + paper.w - 0.5 * sp,
 bottomY: paper.y + ext.up * sp,
-wheel: (S.skin === 1 || curKey) ? { cx: wheelCx, cy: wheelCy, rOut: ringR * 1.22, rIn: ringR * 0.2, ring: ringR }
+wheel: (!kbOn && (S.skin === 1 || curKey)) ? { cx: wheelCx, cy: wheelCy, rOut: ringR * 1.22, rIn: ringR * 0.2, ring: ringR }
     : { cx: wheelCx, cy: wheelCy, rOut: wheelD / 2, rIn: wheelD / 2 * 0.33 },
-msgX, msgY,
+msgX, msgY, kb: kbR,
 btnW: clamp(cw * 0.26, 86, 130)
 };
 L.leftLimit = L.x0 + (3.2 + geo.ks) * sp;
@@ -496,6 +517,7 @@ function startSession(review, clefs) {
   lastClef = plan[0];
   curShownAt = performance.now();
   pauseStart = settingsOpen ? curShownAt : null;
+  kbOct = clefsOf(playMode).length === 1 && clefsOf(playMode)[0] === 1 ? 2 : 4;
   go("game");
   if (reviewOn) { msg = "Repaso: " + reviewPool.length + " notas a reforzar"; msgOk = true; msgT = 3; }
   if (curKey) { msg = "Nivel " + (curKey.lv + 1) + "/" + KEY_LEVELS.length + " · " + keyName(curKey.lv) + " (" + keySym(curKey.lv) + ")"; msgOk = true; msgT = 3.5; }
@@ -573,16 +595,16 @@ function finishSession() {
 }
 const currentNote = () => notes.find((n) => n.state === 0) || null;
 const nameOf = (i) => (S.es ? NAMES_ES[i] : NAMES_EN[i]);
-function submit(idx) {
+function submit(idx, kb) {
   if (scene !== "game" || settingsOpen) return;
-  if (playMode === 5 && mel && !melDone) { melPress(idx); return; }
+  if (playMode === 5 && mel && !melDone) { melPress(idx, kb); return; }
   const c = currentNote();
   if (!c) return;
   audio();
   const now = performance.now();
   const ring = idx >= 10 ? 1 : 0, lt = idx >= 10 ? idx - 10 : idx;      // 10-16 = círculo interior (nota alterada por la armadura)
-  const ok = mod(c.step, 7) === lt && ((c.acc || 0) !== 0 ? ring === 1 : ring === 0);
-  flashIdx = idx;  flashT = 0.35;  flashOk = ok;
+  const ok = kb ? kbOk(c, kb) : mod(c.step, 7) === lt && ((c.acc || 0) !== 0 ? ring === 1 : ring === 0);
+  flashIdx = idx;  flashKey = kb ? kb.midi : -1;  flashT = 0.35;  flashOk = ok;
   if (ok) {
     c.state = 1;
     streak++;  okCount++;  bestStreak = Math.max(bestStreak, streak);
@@ -621,6 +643,7 @@ const a = mod(Math.atan2(vy, vx) + Math.PI / 2 + seg / 2, Math.PI * 2);
 return Math.floor(a / seg) % 7;
 }
 function act(id) {
+  if (id === "kb_lo" || id === "kb_hi") { kbOct = clamp(kbOct + (id === "kb_lo" ? -1 : 1), 1, 8 - (L.kb ? L.kb.octs : 1));  dirty = true;  return; }
   if (id === "ml_retry") { loadMelList(true); return; }
   if (id.startsWith("mel_")) { openSong(int(id.slice(4), -1)); return; }
   if (id === "mode_5") { go("melodies"); return; }
@@ -668,6 +691,10 @@ function act(id) {
     case "hap_off": S.haptic = false; break;
     case "mh_on":  S.melHold = true;  break;
     case "mh_off": S.melHold = false; break;
+    case "lay_p": S.layoutP = S.layoutP === 1 ? 0 : 1;  layout(); break;
+    case "lay_l": S.layoutL = S.layoutL === 1 ? 0 : 1;  layout(); break;
+    case "oct_on":  S.octVerify = true;   layout(); break;
+    case "oct_off": S.octVerify = false;  layout(); break;
     case "adapt_on":  S.adapt = true;  break;
     case "adapt_off": S.adapt = false; break;
   }
@@ -676,7 +703,7 @@ function act(id) {
 }
 function update(dt) {
   let moving = scene === "menu";
-  if (hold) { flashIdx = hold.idx;  flashT = Math.max(flashT, 0.15);  flashOk = true;  moving = true;  melTick(performance.now()); }
+  if (hold) { flashIdx = hold.idx;  flashKey = hold.kb ? hold.kb.midi : -1;  flashT = Math.max(flashT, 0.15);  flashOk = true;  moving = true;  melTick(performance.now()); }
   const k = 1 - Math.exp(-9 * dt);
   for (const n of notes) {
     const d = n.tslot - n.slot;
@@ -723,9 +750,12 @@ const rows = [
 ];
 if (navigator.requestMIDIAccess) rows.push({ k: "sw", label: "Teclado MIDI", value: S.midi ? "Habilitado" : "Deshabilitado", on: S.midi, id: S.midi ? "midi_off" : "midi_on" });
 rows.push({ k: "sw", label: "Práctica adaptativa", value: S.adapt ? "Más práctica en tus notas débiles" : "Notas totalmente al azar", on: S.adapt, id: S.adapt ? "adapt_off" : "adapt_on" });
+rows.push({ k: "sw", label: "Verificación de octavas", value: S.octVerify ? "Se comprueba la octava exacta de la nota" : "Las notas introducidas pueden estar en cualquier octava", on: S.octVerify, id: S.octVerify ? "oct_off" : "oct_on" });
 rows.push({ k: "hd", label: "Apariencia" });
 rows.push({ k: "tap", label: "Tema de la aplicación", value: S.skin === 1 ? "Oscuro" : "Clásico", id: S.skin === 1 ? "skin_0" : "skin_1" });
 rows.push({ k: "colors", label: "Color de Acento" });
+rows.push({ k: "tap", label: "Disposición de las notas", value: S.layoutP === 1 ? "Teclado virtual (por defecto)" : "Círculo de notas", id: "lay_p" });
+rows.push({ k: "tap", label: "Disposición de las notas (apaisado)", value: S.layoutL === 1 ? "Teclado virtual (por defecto)" : "Círculo de notas", id: "lay_l" });
 rows.push({ k: "step", label: "Notas visibles", value: String(S.visible), minus: "vis_-", plus: "vis_+" });
 if (fsSupported()) rows.push({ k: "sw", label: "Pantalla completa", value: isFs() ? "Activada" : "Desactivada", on: isFs(), id: isFs() ? "fs_off" : "fs_on" });
 else rows.push({ k: "note", label: "iPhone: Compartir › Añadir a pantalla de inicio" });
@@ -762,8 +792,8 @@ cv.addEventListener("pointerdown", (e) => {
     return;
   }
   if (scene === "game" && !settingsOpen) {
-    const i = wheelIndex(pointer);
-    if (i >= 0) submit(i);
+    if (L.kb) kbPress(kbHit(pointer));
+    else { const i = wheelIndex(pointer);  if (i >= 0) submit(i); }
   }
   dirty = true;
 });
@@ -982,13 +1012,7 @@ function onMidi(e) {
 const [st, note, vel] = e.data;
 if (S.midi && scene === "game" && playMode === 5 && ((st & 0xF0) === 0x80 || ((st & 0xF0) === 0x90 && vel === 0))) { melRelease(); return; }
 if (!S.midi || settingsOpen || scene !== "game" || (st & 0xF0) !== 0x90 || vel === 0) return;
-if (curKey) {                                      // con armadura se compara la ALTURA (no la ortografía): cualquier octava vale
-  const c = currentNote();
-  if (c) submit((note - (midi(c.step) + (c.acc || 0))) % 12 === 0 ? mod(c.step, 7) + (c.acc ? 10 : 0) : -2);
-  return;
-}
-const idx = SEMITONES.indexOf(note % 12);
-if (idx >= 0) submit(idx);
+submit(-1, { midi: note });                         // por altura (y octava si está activada la verificación)
 }
 function bindMidi() {
 midiAccess.inputs.forEach((inp) => {
@@ -1541,25 +1565,26 @@ function startMelody(song) {
   lastClef = 0;
   curShownAt = performance.now();
   pauseStart = settingsOpen ? curShownAt : null;
+  kbOct = clefsOf(playMode).length === 1 && clefsOf(playMode)[0] === 1 ? 2 : 4;
   go("game");
   msg = S.melHold ? "Mantén pulsada cada nota lo que dura" : "Toca las notas de la canción";  msgOk = true;  msgT = 3.5;
 }
 // pulsación: la nota correcta se mantiene el tiempo que dura (la blanca más que la negra)
-function melPress(idx) {
+function melPress(idx, kb) {
   const c = currentNote();
   if (!c || hold) return;
-  const lt = idx >= 10 ? idx - 10 : idx;
-  if (mod(c.step, 7) !== lt) {                         // nota equivocada: como en el resto de modos
+  const good = kb ? kbOk(c, kb) : mod(c.step, 7) === (idx >= 10 ? idx - 10 : idx);
+  if (!good) {                         // nota equivocada: como en el resto de modos
     badCount++;  curBad++;  streak = 0;  c.shake = 1;
-    flashIdx = idx;  flashT = 0.35;  flashOk = false;
+    flashIdx = idx;  flashKey = kb ? kb.midi : -1;  flashT = 0.35;  flashOk = false;
     playWrong();  buzz([35, 45, 35]);
     return;
   }
   audio();  playNote(c.step, 0.5, c.alt || 0);  buzz(12);
-  flashIdx = idx;  flashT = 0.35;  flashOk = true;
+  flashIdx = idx;  flashKey = kb ? kb.midi : -1;  flashT = 0.35;  flashOk = true;
   const need = melNeed(c);
-  if (need <= 0.06) { melHoldMs = 0;  melDone = true;  submit(idx);  melDone = false;  return; }
-  hold = { idx, t0: performance.now(), need: need * 1000, note: c };
+  if (need <= 0.06) { melHoldMs = 0;  melDone = true;  submit(idx, kb);  melDone = false;  return; }
+  hold = { idx, kb, t0: performance.now(), need: need * 1000, note: c };
 }
 function melRelease() {
   if (!hold) return;
@@ -1568,7 +1593,7 @@ function melRelease() {
 function melTick(now) {
   if (hold && now - hold.t0 >= hold.need) {
     const h = hold;  hold = null;
-    melHoldMs = h.need;  melDone = true;  submit(h.idx);  melDone = false;
+    melHoldMs = h.need;  melDone = true;  submit(h.idx, h.kb);  melDone = false;
   }
 }
 
@@ -1654,6 +1679,63 @@ function drawMelodies() {
   ctx.restore();
   maxScroll = Math.max(0, y + scrollY - L.bot + L.m);
   if (scrollY > maxScroll) { scrollY = maxScroll;  dirty = true; }
+}
+
+/* ===================== TECLADO VIRTUAL (v1.2.0) ===================== */
+let kbOct = 4, flashKey = -1;
+const BLACK_AFTER = [0, 1, 3, 4, 5];                    // teclas negras tras Do, Re, Fa, Sol y La
+const noteMidiOf = (c) => midi(c.step) + (c.acc || 0) + (c.alt || 0);
+// respuesta del teclado / MIDI: se compara la ALTURA (acepta enarmónicos); con "verificación de octavas", también la octava
+function kbOk(c, kb) {
+  const m = noteMidiOf(c);
+  return S.octVerify ? kb.midi === m : mod(kb.midi, 12) === mod(m, 12);
+}
+function kbKeys() {
+  const r = L.kb, n = r.octs, y0 = r.y + r.strip, h = r.h - r.strip, ww = r.w / (7 * n), whites = [], blacks = [];
+  for (let o = 0; o < n; o++) {
+    for (let i = 0; i < 7; i++) {
+      const midiN = 12 * (kbOct + o + 1) + SEMITONES[i], x = r.x + (o * 7 + i) * ww;
+      whites.push({ black: false, midi: midiN, x, y: y0, w: ww, h, oct: kbOct + o, i });
+      if (BLACK_AFTER.includes(i)) {
+        const bw = ww * 0.62;
+        blacks.push({ black: true, midi: midiN + 1, x: x + ww - bw / 2, y: y0, w: bw, h: h * 0.6, oct: kbOct + o, i });
+      }
+    }
+  }
+  return { whites, blacks, y0, h };
+}
+function kbHit(p) {
+  if (!L.kb || p.x < 0) return null;
+  const ks = kbKeys();
+  for (const k of ks.blacks) if (p.x >= k.x && p.x <= k.x + k.w && p.y >= k.y && p.y <= k.y + k.h) return k;
+  for (const k of ks.whites) if (p.x >= k.x && p.x < k.x + k.w && p.y >= k.y && p.y <= k.y + k.h) return k;
+  return null;
+}
+function kbPress(k) { if (k) submit(-1, { midi: k.midi }); }
+function drawKeyboard() {
+  const r = L.kb, ks = kbKeys(), dark = S.skin === 1, okCol = dark ? "#4ade80" : "#2f9e5a";
+  const lit = (k) => (flashT > 0 && flashKey === k.midi ? (flashOk ? okCol : AC.fail) : hold && hold.kb && hold.kb.midi === k.midi ? AC.acc : null);
+  ctx.fillStyle = dark ? "#262626" : "#cfc9b8";  ctx.fillRect(r.x, r.y, r.w, r.h);
+  for (const k of ks.whites) {
+    ctx.fillStyle = lit(k) || (dark ? "#333" : "#f6f3ea");
+    ctx.fillRect(k.x + 0.5, ks.y0, k.w - 1, ks.h - 1);
+    if (S.octVerify && k.i === 0) text(nameOf(0) + k.oct, k.x + k.w / 2, ks.y0 + ks.h - 16, clamp(k.w * 0.28, 11, 15), lit(k) ? "#fff" : dark ? "#9a9a9a" : "#777", "center");
+  }
+  for (const k of ks.blacks) {
+    ctx.fillStyle = lit(k) || (dark ? "#aaaaaa" : "#1c1c1c");
+    rr(k.x, k.y - 1, k.w, k.h, 4);  ctx.fill();
+  }
+  if (r.strip) {                                           // selector de octava (solo con verificación de octavas)
+    ctx.fillStyle = dark ? "#1d1d1d" : "#3a3a3a";  ctx.fillRect(r.x, r.y, r.w, r.strip);
+    const cy = r.y + r.strip / 2, lab = nameOf(0) + kbOct + " – " + nameOf(6) + (kbOct + r.octs - 1);
+    text(lab, r.x + r.w / 2, cy, clamp(r.strip * 0.42, 12, 16), "#d0d0d0", "center");
+    const bw = clamp(r.w * 0.2, 56, 110);
+    [["kb_lo", r.x, "‹"], ["kb_hi", r.x + r.w - bw, "›"]].forEach(([id, x, ch]) => {
+      if (hoverBtn === id) { ctx.fillStyle = "rgba(255,255,255,.1)"; ctx.fillRect(x, r.y, bw, r.strip); }
+      text(ch, x + bw / 2, cy - 1, r.strip * 0.8, "#e6e6e6", "center");
+      addHit(id, x, r.y, bw, r.strip);
+    });
+  }
 }
 
 const darkUI = () => S.skin === 1 || scene !== "game";
@@ -2177,7 +2259,7 @@ if (S.skin !== 1) drawPaper();
 drawStaff();
 drawNotes();
 drawMessage();
-drawWheel();
+if (L.kb) drawKeyboard(); else drawWheel();
 } else {
 ctx.fillStyle = AC.bg;  ctx.fillRect(0, 0, L.vw, L.vh);
 if (scene === "menu") drawMenu(t);
@@ -2195,7 +2277,7 @@ last = t;
 const moving = update(dt);
 if (finishAt && performance.now() >= finishAt) { finishAt = 0; finishSession(); }
 buildUI();
-const hi = settingsOpen || scene !== "game" ? -1 : wheelIndex(pointer);
+const hi = settingsOpen || scene !== "game" || L.kb ? -1 : wheelIndex(pointer);
 let hb = "";
 for (const b of buttons) if (hit(b, pointer)) { hb = b.id; break; }
 if (hi !== hoverIdx || hb !== hoverBtn) { hoverIdx = hi; hoverBtn = hb; dirty = true; }
