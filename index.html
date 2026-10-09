@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.2.1", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.2.2", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -136,7 +136,7 @@ S.mode   = clamp(int(raw.mode, 0), 0, 4);
   S.klv    = [0, 1].map((i) => clamp(int(Array.isArray(raw.klv) ? raw.klv[i] : 0, 0), 0, KEY_LEVELS.length - 1));
 S.lg = clamp(int(raw.lg !== undefined ? raw.lg : raw.above, 1), 0, 4);
 S.lf = clamp(int(raw.lf !== undefined ? raw.lf : raw.above, 1), 0, 4);
-S.visible = clamp(int(raw.visible, 6), 3, 8);
+S.nsize = clamp(int(raw.nsize, 1), 0, 3);                  // tamaño de las notas: 0 pequeño · 1 normal · 2 grande · 3 muy grande
 S.es     = raw.es !== false;
 S.sound  = raw.sound !== false;
 S.piano  = raw.piano !== false;
@@ -171,8 +171,9 @@ t: parseFloat(cs.paddingTop) || 0,    r: parseFloat(cs.paddingRight) || 0,
 b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0
 };
 }
+const SZ = [0.8, 1, 1.25, 1.5], SZ_NAME = ["Pequeño", "Normal", "Grande", "Muy grande"];
 function noteGeometry() {
-const n = curKey ? Math.min(S.visible, 5) : S.visible, ks = curKey ? curKey.w : 0;     // la armadura ocupa sitio entre la clave y las notas
+const n = curKey ? 5 : 6, ks = curKey ? curKey.w : 0;     // la armadura ocupa sitio entre la clave y las notas
 const first = (S.skin === 1 ? 9.4 : 5.3) + ks;
 const gap = S.skin === 1 ? 3.3 : (n <= 4 ? 3.4 : 3.0);
 return { first, gap, ks, fit: first + (n - 1) * gap + (S.skin === 1 ? 4 : 2.3) };
@@ -214,13 +215,13 @@ if (kbOn) {                                          // teclado virtual: de bord
   const strip = S.octVerify ? clamp(Math.round(vh * 0.05), 30, 40) : 0, innerW = cw - 2 * m;
   if (!land) {
     const kbH = clamp(Math.min(vh * 0.4, cw * 1.05), 160, 560) + strip;
-    sp = clamp(innerW / geo.fit, 10, 36);
+    sp = clamp(innerW * SZ[S.nsize] / geo.fit, 10, 44);
     while (sp > 10 && (bot - top) - hh - total * sp - msgH - kbH - m < 0) sp -= 0.5;
     paper = { x: cx0 + m, y: top + hh, w: innerW, h: total * sp };
     kbR = { x: cx0, y: bot - kbH, w: cw, h: kbH, octs: 1, strip };
   } else {
     const kbH = clamp(vh * 0.36, 96, 240) + strip;
-    sp = clamp(Math.min(innerW / geo.fit, ((bot - top) - hh - msgH - kbH - m) / total), 10, 36);
+    sp = clamp(Math.min(innerW * SZ[S.nsize] / geo.fit, ((bot - top) - hh - msgH - kbH - m) / total), 10, 44);
     const py = top + hh + Math.max(0, ((bot - kbH - m) - (top + hh) - total * sp - msgH) / 2);
     paper = { x: cx0 + m, y: py, w: innerW, h: total * sp };
     kbR = { x: cx0, y: bot - kbH, w: cw, h: kbH, octs: 2, strip };
@@ -229,7 +230,7 @@ if (kbOn) {                                          // teclado virtual: de bord
   wheelD = 100;  wheelCx = cx0 + cw / 2;  wheelCy = kbR.y - 60;
 } else if (!land) {
 const innerW = cw - 2 * m;
-sp = clamp(innerW / geo.fit, 10, 36);
+sp = clamp(innerW * SZ[S.nsize] / geo.fit, 10, 44);
 const minWheel = Math.min(innerW, vh * 0.36);
 let avail;
 for (;;) {
@@ -247,7 +248,7 @@ wheelCy = regionTop + (regionBot - regionTop) / 2;
 wheelD = clamp(Math.min((bot - top) - hh - m * 2, cw * 0.42), 100, 560);
 const leftW  = cw - wheelD - m * 3;
 const availH = (bot - top) - hh - msgH - m * 2;
-sp = clamp(Math.min(leftW / geo.fit, availH / total), 10, 36);
+sp = clamp(Math.min(leftW * SZ[S.nsize] / geo.fit, availH / total), 10, 44);
 const groupH = total * sp + msgH;
 const py = top + hh + Math.max(0, ((bot - top) - hh - groupH) / 2 - m * 0.5);
 paper = { x: cx0 + m, y: py, w: leftW, h: total * sp };
@@ -276,6 +277,10 @@ btnW: clamp(cw * 0.26, 86, 130)
 L.leftLimit = L.x0 + (3.2 + geo.ks) * sp;
 L.curX      = L.x0 + geo.first * sp;
 L.gap       = geo.gap * sp;
+{
+  const span = L.x1 - L.curX - 1.6 * sp, base = Math.max(geo.gap * sp, paper.w * 0.085), nv = Math.max(3, Math.round(span / base) + 1);
+  L.gap = span / (nv - 1);
+}
 }
 const stepY = (s, c) => L.bottomY - (s - bottomStep(c)) * L.sp * 0.5;
 const noteX = (n) => L.curX + n.slot * L.gap;
@@ -676,8 +681,8 @@ function act(id) {
       dirty = true; return;
     case "open":  setSettings(true);  break;
     case "close": setSettings(false); break;
-    case "vis_-":    S.visible = Math.max(3, S.visible - 1); layout(); break;
-    case "vis_+":    S.visible = Math.min(8, S.visible + 1); layout(); break;
+    case "nsz_-":    S.nsize = Math.max(0, S.nsize - 1); layout(); break;
+    case "nsz_+":    S.nsize = Math.min(3, S.nsize + 1); layout(); break;
     case "skin_0": S.skin = 0; layout(); break;
     case "skin_1": S.skin = 1; layout(); break;
     case "midi_on": S.midi = true; initMidi(); break;
@@ -759,7 +764,7 @@ rows.push({ k: "tap", label: "Tema de la aplicación", value: S.skin === 1 ? "Os
 rows.push({ k: "colors", label: "Color de Acento" });
 rows.push({ k: "tap", label: "Disposición de las notas", value: S.layoutP === 1 ? "Teclado virtual (por defecto)" : "Círculo de notas", id: "lay_p" });
 rows.push({ k: "tap", label: "Disposición de las notas (apaisado)", value: S.layoutL === 1 ? "Teclado virtual (por defecto)" : "Círculo de notas", id: "lay_l" });
-rows.push({ k: "step", label: "Notas visibles", value: String(S.visible), minus: "vis_-", plus: "vis_+" });
+rows.push({ k: "step", label: "Tamaño de las notas", value: SZ_NAME[S.nsize], minus: "nsz_-", plus: "nsz_+" });
 if (fsSupported()) rows.push({ k: "sw", label: "Pantalla completa", value: isFs() ? "Activada" : "Desactivada", on: isFs(), id: isFs() ? "fs_off" : "fs_on" });
 else rows.push({ k: "note", label: "iPhone: Compartir › Añadir a pantalla de inicio" });
 if (deferredInstall || updReady) rows.push({ k: "hd", label: "Aplicación" });
