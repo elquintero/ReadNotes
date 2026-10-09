@@ -1,125 +1,189 @@
 {
-  "version": 1,
+  "version": 2,
+  "categorias": [
+    {
+      "id": "bandas-sonoras",
+      "nombre": "Bandas Sonoras",
+      "icono": "pelicula",
+      "descripcion": "Música de cine y televisión."
+    },
+    {
+      "id": "anime",
+      "nombre": "Anime",
+      "icono": "anime",
+      "descripcion": "Melodías de series y películas de anime."
+    },
+    {
+      "id": "videojuegos",
+      "nombre": "Videojuegos",
+      "icono": "mando",
+      "descripcion": "Música de videojuegos."
+    },
+    {
+      "id": "jazz",
+      "nombre": "Jazz",
+      "icono": "saxo",
+      "descripcion": "Jazz y ejercicios relacionados."
+    },
+    {
+      "id": "pop",
+      "nombre": "Pop",
+      "icono": "microfono",
+      "descripcion": "Canciones pop."
+    },
+    {
+      "id": "folk",
+      "nombre": "Folk",
+      "icono": "folk",
+      "descripcion": "Canciones tradicionales internacionales."
+    },
+    {
+      "id": "disney",
+      "nombre": "Disney",
+      "icono": "estrella",
+      "descripcion": "Canciones de Disney."
+    }
+  ],
   "melodias": [
     {
       "id": "alegria",
       "titulo": "Himno a la alegría",
       "autor": "L. van Beethoven",
-      "archivo": "alegria.mxl"
+      "archivo": "alegria.mxl",
+      "categoria": "clasica"
     },
     {
       "id": "estrellita",
       "titulo": "Estrellita, ¿dónde estás?",
       "autor": "Tradicional",
-      "archivo": "estrellita.mxl"
+      "archivo": "estrellita.mxl",
+      "categoria": "infantil"
     },
     {
       "id": "awholenewworld",
       "titulo": "A Whole New World",
       "autor": "Disney",
-      "archivo": "awholenewworld.mxl"
+      "archivo": "awholenewworld.mxl",
+      "categoria": "disney"
     },
     {
       "id": "nocturnen2op9",
       "titulo": "Nocturne n.2 op.9",
       "autor": "Chopin",
-      "archivo": "nocturnen2op9.mxl"
+      "archivo": "nocturnen2op9.mxl",
+      "categoria": "clasica"
     },
     {
       "id": "againfromyourlielnapril",
       "titulo": "Again",
       "autor": "From Your Lie In April",
-      "archivo": "againfromyourlielnapril.mxl"
+      "archivo": "againfromyourlielnapril.mxl",
+      "categoria": "anime"
     },
     {
       "id": "escala-do",
       "titulo": "Escala de Do mayor",
       "autor": "Ejercicio",
-      "archivo": "escala-do.mxl"
+      "archivo": "escala-do.mxl",
+      "categoria": "ejercicios"
     },
     {
       "id": "hermano-juan",
       "titulo": "Hermano Juan (Frère Jacques)",
       "autor": "Tradicional",
-      "archivo": "hermano-juan.mxl"
+      "archivo": "hermano-juan.mxl",
+      "categoria": "infantil"
     },
     {
       "id": "marriedlifeup",
       "titulo": "Married life (Up)",
       "autor": "Michael Giacchino",
-      "archivo": "marriedlifeup.mxl"
-    },  
+      "archivo": "marriedlifeup.mxl",
+      "categoria": "bandas-sonoras"
+    },
     {
       "id": "claro-de-luna",
       "titulo": "Al claro de la luna",
       "autor": "Tradicional",
-      "archivo": "claro-de-luna.mxl"
+      "archivo": "claro-de-luna.mxl",
+      "categoria": "tradicional"
     },
     {
       "id": "jingle-bells",
       "titulo": "Jingle Bells (estribillo)",
       "autor": "J. Pierpont",
-      "archivo": "jingle-bells.mxl"
+      "archivo": "jingle-bells.mxl",
+      "categoria": "navidad"
     },
     {
-      "id": "Nochedepaz",
+      "id": "nochedepaz",
       "titulo": "Noche de paz",
       "autor": "J. Yeung",
-      "archivo": "Nochedepaz.mxl"
+      "archivo": "Nochedepaz.mxl",
+      "categoria": "navidad"
     },
     {
       "id": "nokiatune",
       "titulo": "Nokia Ringtone",
       "autor": "Francisco Tárrega",
-      "archivo": "nokiatune.mxl"
+      "archivo": "nokiatune.mxl",
+      "categoria": "clasica"
     },
     {
-      "id": "PreludeFinalFantasy",
+      "id": "preludefinalfantasy",
       "titulo": "Prelude Final Fantasy",
       "autor": "Nobuo Uematsu",
-      "archivo": "PreludeFinalFantasy.mxl"
+      "archivo": "PreludeFinalFantasy.mxl",
+      "categoria": "videojuegos"
     },
     {
       "id": "rattlethecash",
       "titulo": "Rattle the Cash",
       "autor": "English Jigs",
-      "archivo": "rattlethecash.mxl"
+      "archivo": "rattlethecash.mxl",
+      "categoria": "folk"
     },
     {
-      "id": "Susanna",
+      "id": "susanna",
       "titulo": "Oh! Susanna",
       "autor": "Stephen Foster",
-      "archivo": "ohsusanna.mxl"
+      "archivo": "ohsusanna.mxl",
+      "categoria": "folk"
     },
     {
       "id": "myfavlick",
       "titulo": "My fav lick",
       "autor": "Jazz",
-      "archivo": "myfavlick.mxl"
+      "archivo": "myfavlick.mxl",
+      "categoria": "jazz"
     },
     {
-      "id": "Perfect",
+      "id": "perfect",
       "titulo": "Perfect",
       "autor": "Ed Sheeran",
-      "archivo": "perfect.mxl"
+      "archivo": "perfect.mxl",
+      "categoria": "pop"
     },
     {
-      "id": "Spring",
+      "id": "spring",
       "titulo": "Spring from the Four",
       "autor": "Antonio Vivaldi",
-      "archivo": "springfromthefour.mxl"
+      "archivo": "springfromthefour.mxl",
+      "categoria": "clasica"
     },
     {
       "id": "piratesofthecarribean",
       "titulo": "Pirates Of The Carribean",
       "autor": "Deepak",
-      "archivo": "piratesofthecarribean.mxl"
+      "archivo": "piratesofthecarribean.mxl",
+      "categoria": "bandas-sonoras"
     },
     {
-      "id": "SquidGameSeason2",
+      "id": "squidgameseason2",
       "titulo": "Squid Game Season 2",
       "autor": "Round and Round",
-      "archivo": "SquidGameSeason2.mxl"
+      "archivo": "SquidGameSeason2.mxl",
+      "categoria": "bandas-sonoras"
     }
   ]
 }
