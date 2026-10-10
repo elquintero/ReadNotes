@@ -1,0 +1,11 @@
+ReadNotes 1.4.4
+
+SUBIR: index.html y sw.js (sustituyen a los actuales). melodias/melodias.json no cambia respecto a la 1.4.3 (va incluido por comodidad).
+
+Cambios:
+- La rueda de ajustes se pinta con Path2D (entrada "ajustes" de ICON_PATHS).
+- Eliminados los iconos de categoría dibujados a mano que ya no se usaban. Iconos válidos para "icono":
+  pop, clasica, disney, cine, anime, jazz, infantil, tradicional, navidad, videojuegos, metronomo, nota
+  (alias: microfono->pop, pelicula/bandas-sonoras->cine, mando->videojuegos, saxo->jazz, folk->tradicional, ejercicios->metronomo)
+- Si el icono no existe se elige por el nombre de la categoría; si no se reconoce, se usa "nota".
+- Eliminado código sin uso (hsv, drawHeader, titleUnderlined, drawBackBtn, restartIfGame, addBtn, darkUI).
