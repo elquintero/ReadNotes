@@ -2,6 +2,30 @@
   "version": 2,
   "categorias": [
     {
+      "id": "clasica",
+      "nombre": "Clásica",
+      "icono": "clasica",
+      "descripcion": "Música clásica o relacionada con la misma."
+    },
+    {
+      "id": "infantil",
+      "nombre": "Infantil",
+      "icono": "infantil",
+      "descripcion": "Canciones sencillas para empezar."
+    },
+    {
+      "id": "navidad",
+      "nombre": "Navidad",
+      "icono": "navidad",
+      "descripcion": "Villancicos y canciones de fiesta."
+    },
+    {
+      "id": "ejercicios",
+      "nombre": "Ejercicios",
+      "icono": "metronomo",
+      "descripcion": "Escalas y arpegios para practicar."
+    },
+    {
       "id": "bandas-sonoras",
       "nombre": "Bandas Sonoras",
       "icono": "pelicula",
@@ -40,7 +64,7 @@
     {
       "id": "disney",
       "nombre": "Disney",
-      "icono": "estrella",
+      "icono": "disney",
       "descripcion": "Canciones de Disney."
     }
   ],
