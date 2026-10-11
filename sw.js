@@ -1,7 +1,7 @@
 /* ReadNotes – service worker (funciona sin conexión)
    Cambia VERSION en cada publicación: así los móviles detectan la nueva versión
    y muestran el aviso "Nueva versión disponible". */
-const VERSION = "1.4.5";
+const VERSION = "1.5.1";
 const CACHE = "readnotes-" + VERSION;
 const SOUND = "readnotes-sound";            // muestras de piano: se conservan entre versiones
 const MELO = "readnotes-melodias";         // lista y partituras de melodías: se conservan entre versiones
@@ -42,13 +42,18 @@ self.addEventListener("fetch", (e) => {
   const req = e.request, url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== location.origin) return;
 
-  // Páginas: red primero, saltándose la caché HTTP de GitHub Pages (10 min); sin conexión, copia guardada
+  // Páginas: red primero (se salta la caché HTTP de GitHub Pages), pero con un límite de espera: si la red tarda
+  // (p. ej. al reabrir la app enseguida, con el móvil despertando la conexión) se abre la copia guardada y la red
+  // sigue en segundo plano actualizándola. Sin este límite Android se quedaba en su pantalla de icono.
   if (req.mode === "navigate") {
-    e.respondWith(
-      fetch(req, { cache: "no-cache" })
-        .then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put("index.html", copy)); return res; })
-        .catch(() => caches.match("index.html"))
-    );
+    e.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      const net = fetch(req, { cache: "no-cache" }).then((res) => { cache.put("index.html", res.clone()); return res; });
+      const cached = await cache.match("index.html");
+      if (!cached) return net;
+      e.waitUntil(net.catch(() => {}));
+      return Promise.race([net.catch(() => cached), new Promise((r) => setTimeout(() => r(cached), 1800))]);
+    })());
     return;
   }
 

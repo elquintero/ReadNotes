@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.0", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.1", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -722,6 +722,7 @@ function act0(id) {
 }
 function update(dt) {
   let moving = false;
+  const was = flashT > 0 || msgT > 0;                    // un redibujado más al terminar, para que no quede un resalte "congelado"
   if (hold) { flashIdx = hold.idx;  flashKey = hold.kb ? hold.kb.midi : -1;  flashT = Math.max(flashT, 0.15);  flashOk = true;  moving = true;  melTick(performance.now()); }
   const k = 1 - Math.exp(-9 * dt);
   for (const n of notes) {
@@ -747,7 +748,7 @@ function update(dt) {
       if (Math.abs(dd) > 0.004) { lnT[c] += dd * (1 - Math.exp(-16 * dt));  moving = true; } else lnT[c] = tg;
     }
   }
-  return moving || flashT > 0 || msgT > 0;
+  return moving || was || flashT > 0 || msgT > 0;
 }
 let settingsOpen = false;
 let buttons = [];
@@ -766,9 +767,9 @@ const rows = [
 { k: "sw", label: "Vibraciones", value: S.haptic ? "Habilitado" : "Deshabilitado", on: S.haptic, id: S.haptic ? "hap_off" : "hap_on" },
 { k: "sw", label: "Mantener notas en melodías", value: S.melHold ? "Mantén cada nota lo que dura" : "Un toque basta para avanzar", on: S.melHold, id: S.melHold ? "mh_off" : "mh_on" }
 ];
-if (navigator.requestMIDIAccess) {
+{
   const mi = midiAccess ? [...midiAccess.inputs.values()].filter((i) => i.state === "connected") : [];
-  const val = !S.midi ? "Deshabilitado" : mi.length ? "Habilitado · conectado (" + (mi[0].name || "teclado") + (mi.length > 1 ? " +" + (mi.length - 1) : "") + ")" : "Habilitado · sin teclado conectado";
+  const val = !navigator.requestMIDIAccess ? "No disponible en este navegador (usa Chrome o Edge)" : !S.midi ? "Deshabilitado" : midiErr ? "Habilitado · " + midiErr : mi.length ? "Habilitado · conectado (" + (mi[0].name || "teclado") + (mi.length > 1 ? " +" + (mi.length - 1) : "") + ")" + (midiLast ? " · última nota: " + midiLast : "") : "Habilitado · sin teclado conectado" + (midiLast ? " · última nota: " + midiLast : "");
   rows.push({ k: "sw", label: "Teclado MIDI", value: val, on: S.midi, id: S.midi ? "midi_off" : "midi_on" });
 }
 rows.push({ k: "sw", label: "Práctica adaptativa", value: S.adapt ? "Más práctica en tus notas débiles" : "Notas totalmente al azar", on: S.adapt, id: S.adapt ? "adapt_off" : "adapt_on" });
@@ -791,12 +792,13 @@ rows.push({ k: "hd", label: "Aplicación" });
   else rows.push({ k: "tap", label: "Instalar app", value: /iphone|ipad|ipod/i.test(navigator.userAgent) ? "Safari: Compartir › Añadir a pantalla de inicio" : "Menú del navegador › Instalar aplicación", id: "noop" });
 }
 if (updReady) rows.push({ k: "tap", label: "Nueva versión disponible", value: "Toca para actualizar ahora", id: "update" });
-rows.push({ k: "hd", label: "Créditos" });
-rows.push({ k: "note", tight: true, small: true, label: "Diseño y Desarrollado por:  J.L Quintero" });
-rows.push({ k: "note", tight: true, label: "Piano: tonejs-instruments (N. Brosowsky), CC BY 3.0" });
 rows.push({ k: "hd", label: "Copia de seguridad" });
 rows.push({ k: "tap", label: "Exportar estadísticas", value: sessions.length + (sessions.length === 1 ? " sesión" : " sesiones") + " · se guarda un archivo .json", id: "bk_exp" });
 rows.push({ k: "tap", label: "Importar estadísticas", value: bkMsg || "Suma las de un archivo .json a las actuales", id: "bk_imp" });
+rows.push({ k: "hd", label: "Créditos" });
+rows.push({ k: "note", tight: true, small: true, label: "Diseño y Desarrollado por:  J.L Quintero" });
+rows.push({ k: "note", tight: true, label: "Piano: tonejs-instruments (N. Brosowsky), CC BY 3.0" });
+
 return rows;
 }
 // los botones salen de lo que se dibuja (cada pantalla los registra con addHit)
@@ -807,6 +809,7 @@ return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 cv.addEventListener("pointerdown", (e) => {
   e.preventDefault();
+  if (S.midi && !midiAccess && !midiPending && !/denegado/.test(midiErr)) initMidi();
   if (!S.haptic && navigator.vibrate) { try { navigator.vibrate(0); } catch (_) {} }
   audio();
   lastMoved = false;
@@ -1042,10 +1045,11 @@ function drawFrame(t) {
   if (p >= 1) { trans = null; dirty = true; }
 }
 
-let midiAccess = null;
+let midiAccess = null, midiErr = "", midiLast = "", midiPending = false;
 const seenMidi = new Set();
 function onMidi(e) {
 const [st, note, vel] = e.data;
+if ((st & 0xF0) === 0x90 && vel > 0) { midiLast = midiName(note);  dirty = true; }          // última nota recibida (se ve en Ajustes)
 if (S.midi && scene === "game" && playMode === 5 && ((st & 0xF0) === 0x80 || ((st & 0xF0) === 0x90 && vel === 0))) { melRelease(); return; }
 if (!S.midi || settingsOpen || scene !== "game" || (st & 0xF0) !== 0x90 || vel === 0) return;
 submit(-1, { midi: note });                         // por altura (y octava si está activada la verificación)
@@ -1060,10 +1064,23 @@ msg = "MIDI: " + (inp.name || "teclado");  msgOk = true;  msgT = 2.5;  dirty = t
 });
 }
 function initMidi() {
-if (midiAccess) { bindMidi(); return; }
-if (!navigator.requestMIDIAccess) return;
-navigator.requestMIDIAccess().then((a) => { midiAccess = a; a.onstatechange = () => { bindMidi(); dirty = true; }; bindMidi(); dirty = true; }).catch(() => {});
+  if (midiAccess) { bindMidi(); return; }
+  if (!navigator.requestMIDIAccess) { midiErr = "no disponible en este navegador"; dirty = true; return; }
+  if (midiPending) return;
+  midiPending = true;
+  navigator.requestMIDIAccess().then((a) => {
+    midiAccess = a;  midiErr = "";  midiPending = false;
+    a.onstatechange = () => { bindMidi();  dirty = true; };
+    bindMidi();  dirty = true;
+  }).catch((e) => {
+    midiPending = false;
+    midiErr = e && (e.name === "SecurityError" || e.name === "NotAllowedError") ? "permiso denegado (actívalo en los ajustes del navegador)" : "no se pudo acceder";
+    dirty = true;
+  });
 }
+// En Android el permiso de MIDI se pide mejor tras un toque del usuario: si está activado y aún no hay acceso, se reintenta al tocar
+document.addEventListener("visibilitychange", () => { if (!document.hidden && S.midi && midiAccess) bindMidi(); });
+addEventListener("pageshow", () => { if (S.midi && midiAccess) bindMidi(); });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 // Android vibra por sí solo en una pulsación larga: se evita en las melodías (no afecta a la opción de vibraciones)
 for (const ev of ["touchstart", "touchmove"]) cv.addEventListener(ev, (e) => { if (!settingsOpen) e.preventDefault(); }, { passive: false });
@@ -1832,12 +1849,102 @@ function drawKeyboard() {
   }
 }
 
+/* ---------- análisis de altura (sin dependencias del navegador; se prueba aparte) ---------- */
+function fftMag(buf, n) {                                  // magnitud del espectro de las últimas n muestras (ventana de Hann)
+  const off = buf.length - n, re = new Float32Array(n), im = new Float32Array(n);
+  for (let i = 0; i < n; i++) re[i] = buf[off + i] * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1)));
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { const t = re[i]; re[i] = re[j]; re[j] = t; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (-2 * Math.PI) / len, wr = Math.cos(ang), wi = Math.sin(ang), h = len >> 1;
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < h; k++) {
+        const a = i + k, b = a + h, tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - tr;  im[b] = im[a] - ti;  re[a] += tr;  im[a] += ti;
+        const nc = cr * wr - ci * wi;  ci = cr * wi + ci * wr;  cr = nc;
+      }
+    }
+  }
+  const m = new Float32Array(n >> 1);
+  for (let i = 0; i < m.length; i++) m[i] = Math.hypot(re[i], im[i]);
+  return m;
+}
+function yinPitch(buf, sr) {                               // devuelve { f, conf } (f = 0 si no hay altura clara)
+  const W = 1280, maxTau = Math.min(Math.floor(sr / 70), buf.length - W - 1), minTau = Math.max(2, Math.floor(sr / 2200));
+  const off = buf.length - W - maxTau - 1, d = new Float32Array(maxTau + 1), dn = new Float32Array(maxTau + 1);
+  for (let tau = 1; tau <= maxTau; tau++) {
+    let s = 0;
+    for (let i = 0; i < W; i++) { const x = buf[off + i] - buf[off + i + tau]; s += x * x; }
+    d[tau] = s;
+  }
+  let run = 0;
+  dn[0] = 1;
+  for (let tau = 1; tau <= maxTau; tau++) { run += d[tau];  dn[tau] = run ? (d[tau] * tau) / run : 1; }
+  let tau = -1;
+  for (let t = minTau; t < maxTau; t++) {
+    if (dn[t] < 0.15) { while (t + 1 < maxTau && dn[t + 1] < dn[t]) t++;  tau = t;  break; }
+  }
+  if (tau < 0) {
+    let best = minTau;
+    for (let t = minTau; t < maxTau; t++) if (dn[t] < dn[best]) best = t;
+    if (dn[best] < 0.28) tau = best;
+  }
+  if (tau < 1 || tau >= maxTau) return { f: 0, conf: 0 };
+  const a = dn[tau - 1], b = dn[tau], c = dn[tau + 1], den = a - 2 * b + c;
+  return { f: sr / (tau + (den ? (0.5 * (a - c)) / den : 0)), conf: 1 - b };
+}
+// Notas graves: la fundamental suena débil (altavoz/micro pequeños) y el armónico 2 parece la nota. Si hay energía en 1,5f, 2,5f, 3,5f
+// (armónicos impares de f/2), la nota real es una octava más grave.
+function fixOctave(f, mag, sr) {
+  const binHz = sr / (mag.length * 2);
+  if (f / 2 < 60 || f > 520) return f;
+  const peak = (fc) => { const b = Math.round(fc / binHz);  let mx = 0;  for (let j = b - 1; j <= b + 1; j++) if (j > 0 && j < mag.length && mag[j] > mx) mx = mag[j];  return mx; };
+  let whole = 0, half = 0, mean = 0, cnt = 0;
+  for (let k = 1; k <= 4; k++) whole += peak(k * f);
+  for (let k = 1; k <= 3; k++) half += peak((k + 0.5) * f);
+  for (let j = Math.round(60 / binHz); j < Math.round(3000 / binHz); j++) { mean += mag[j];  cnt++; }
+  mean /= cnt || 1;
+  if (whole < mean * 12) return f;                         // sin señal clara: no se toca
+  return half > 0.4 * whole ? f / 2 : f;
+}
+const MIC_GATE_MIN = 0.004;
+function micNew() { return { hist: [], rh: [], lock: -1, quiet: 0, noise: 0.004, onsetBlock: 0 }; }
+const micGate = (st) => Math.min(0.02, Math.max(MIC_GATE_MIN, st.noise * 3.5));
+// Una pasada por fragmento (~25 ms). f = { rms, midi (0 = sin altura), conf, now }. Devuelve { press } | { release } | null.
+//  - 3 de los últimos 5 fragmentos con la misma nota: ignora transiciones y errores sueltos (notas ligadas / rápidas)
+//  - un ataque nuevo (subida de volumen) libera la nota anterior: se pueden repetir notas sin silencio entre ellas
+function micFeed(st, f) {
+  const gate = micGate(st), rh = st.rh, prev = rh.length ? rh[rh.length - 1] : 0;
+  const trough = rh.length >= 3 ? Math.min(...rh) : 1e9;
+  const onset = rh.length >= 3 && f.rms > gate * 2 && f.rms > trough * 1.7 && f.rms > prev * 1.15;
+  rh.push(f.rms);  if (rh.length > 6) rh.shift();
+  if (f.rms < gate) {                                      // silencio
+    st.noise = st.noise * 0.97 + f.rms * 0.03;
+    st.hist = [];  st.quiet++;
+    if (st.quiet >= 2 && st.lock >= 0) { st.lock = -1;  return { release: true }; }
+    return null;
+  }
+  st.quiet = 0;
+  if (onset && f.now >= st.onsetBlock) { st.lock = -1;  st.hist = []; }
+  st.hist.push(f.midi && f.conf >= 0.5 ? f.midi : 0);  if (st.hist.length > 5) st.hist.shift();
+  const m = st.hist[st.hist.length - 1];
+  if (!m) return null;
+  if (st.lock >= 0 && ((m - st.lock) % 12 + 12) % 12 === 0) return null;     // misma nota que la ya contestada
+  let votes = 0;
+  for (const h of st.hist) if (h === m) votes++;
+  if (votes >= 3) { st.lock = m;  st.hist = [];  return { press: m }; }
+  return null;
+}
 /* ===================== MICRÓFONO (v1.3.0) ===================== */
 // Detecta la nota que cantas o tocas (algoritmo YIN) y la responde como si pulsaras esa tecla.
 const MIC = { ctx: null, an: null, src: null, stream: null, buf: null, timer: 0, run: false };
 let micErr = "", micMuteUntil = 0, micLevel = 0, micShow = "", micShowT = 0;
-let micSt = { cand: -1, n: 0, lock: -1, quiet: 0 };
-const MIC_GATE = 0.008;                                   // volumen mínimo (RMS) para considerar que hay sonido
+let micSt = micNew();
 const AUDIO_OPTS = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
 // mientras suena la propia app (piano, avisos) el micrófono no escucha: evita que se conteste solo
 {
@@ -1848,37 +1955,13 @@ const AUDIO_OPTS = { audio: { echoCancellation: false, noiseSuppression: false, 
     return _tone.call(this, f, dur, type, ...a);
   };
   playNote = function (step, vol, acc) {                  // el piano de la app: se ignora esa nota hasta que cambie o haya silencio
-    if (MIC.run && micSt.lock < 0) micSt.lock = midi(step) + (acc || 0);
+    if (MIC.run) { micSt.onsetBlock = performance.now() + 450;  if (micSt.lock < 0) micSt.lock = midi(step) + (acc || 0); }
     return _note.apply(this, arguments);
   };
 }
 function midiName(m) {
   const pc = mod(m, 12), idx = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6][pc], black = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0][pc];
   return nameOf(idx) + (black ? "♯" : "") + (Math.floor(m / 12) - 1);
-}
-function yinPitch(buf, sr) {
-  const W = 1280, maxTau = Math.min(Math.floor(sr / 75), buf.length - W - 1), minTau = Math.max(2, Math.floor(sr / 2200));
-  const d = new Float32Array(maxTau + 1), dn = new Float32Array(maxTau + 1);
-  for (let tau = 1; tau <= maxTau; tau++) {
-    let s = 0;
-    for (let i = 0; i < W; i++) { const x = buf[i] - buf[i + tau]; s += x * x; }
-    d[tau] = s;
-  }
-  let run = 0;
-  dn[0] = 1;
-  for (let tau = 1; tau <= maxTau; tau++) { run += d[tau];  dn[tau] = run ? (d[tau] * tau) / run : 1; }
-  let tau = -1;
-  for (let t = minTau; t < maxTau; t++) {
-    if (dn[t] < 0.2) { while (t + 1 < maxTau && dn[t + 1] < dn[t]) t++;  tau = t;  break; }
-  }
-  if (tau < 0) {                                          // voz o instrumento ruidosos: se acepta el mejor mínimo si es claro
-    let best = minTau;
-    for (let t = minTau; t < maxTau; t++) if (dn[t] < dn[best]) best = t;
-    if (dn[best] < 0.3) tau = best;
-  }
-  if (tau < 1 || tau >= maxTau) return 0;
-  const a = dn[tau - 1], b = dn[tau], c = dn[tau + 1], den = a - 2 * b + c;
-  return sr / (tau + (den ? (0.5 * (a - c)) / den : 0));
 }
 async function micEnable() {                              // se pide el permiso al activar la opción
   try {
@@ -1904,10 +1987,10 @@ async function micStart() {
     MIC.ctx = new AC2();
     if (MIC.ctx.state === "suspended") await MIC.ctx.resume().catch(() => {});
     MIC.src = MIC.ctx.createMediaStreamSource(stream);
-    MIC.an = MIC.ctx.createAnalyser();  MIC.an.fftSize = 2048;
+    MIC.an = MIC.ctx.createAnalyser();  MIC.an.fftSize = 4096;
     MIC.src.connect(MIC.an);
     MIC.stream = stream;  MIC.buf = new Float32Array(MIC.an.fftSize);
-    micSt = { cand: -1, n: 0, lock: -1, quiet: 0 };
+    micSt = micNew();
     MIC.timer = setInterval(micTick, 25);
     micErr = "";
   } catch (e) {
@@ -1926,33 +2009,29 @@ function micStop() {
 }
 function micTick() {
   if (!MIC.an || scene !== "game" || settingsOpen) return;
-  const now = performance.now(), buf = MIC.buf, st = micSt;
+  const now = performance.now(), buf = MIC.buf;
   MIC.an.getFloatTimeDomainData(buf);
   let s = 0;
-  for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
-  micLevel = Math.sqrt(s / buf.length);
-  if (now < micMuteUntil) { st.cand = -1;  st.n = 0;  return; }
-  if (micLevel < MIC_GATE) {                              // silencio: se libera la nota anterior
-    st.cand = -1;  st.n = 0;  st.quiet++;
-    if (st.quiet >= 2) { st.lock = -1;  if (playMode === 5 && hold) melRelease(); }
-    if (micShow) { micShow = "";  dirty = true; }
-    return;
+  for (let i = buf.length - 1024; i < buf.length; i++) s += buf[i] * buf[i];
+  micLevel = Math.sqrt(s / 1024);
+  if (now < micMuteUntil) return;
+  let midiN = 0, conf = 0;
+  if (micLevel >= micGate(micSt)) {
+    const y = yinPitch(buf, MIC.ctx.sampleRate);
+    if (y.f) {
+      let f = y.f;
+      if (f < 520) f = fixOctave(f, fftMag(buf, 4096), MIC.ctx.sampleRate);
+      midiN = Math.round(69 + 12 * Math.log2(f / 440));  conf = y.conf;
+      if (midiN < 36 || midiN > 100) midiN = 0;
+    }
   }
-  st.quiet = 0;
-  const f = yinPitch(buf, MIC.ctx.sampleRate);
-  if (!f) { st.cand = -1;  st.n = 0;  return; }
-  const m = Math.round(69 + 12 * Math.log2(f / 440));
-  if (m < 36 || m > 100) return;
-  const nm = midiName(m);
+  const nm = midiN ? midiName(midiN) : "";
   if (nm !== micShow) { micShow = nm;  dirty = true; }
   micShowT = now;
-  if (st.lock >= 0 && mod(m, 12) === mod(st.lock, 12)) { st.cand = -1;  return; }           // misma nota ya contestada: hay que dejar de sonar o cambiar de nota
-  if (m === st.cand) st.n++; else { st.cand = m;  st.n = 1; }
-  if (st.n >= 2) {                                        // nota estable ~50 ms
-    st.lock = m;  st.cand = -1;  st.n = 0;
-    if (playMode === 5 && hold) melRelease();
-    submit(-1, { midi: m });
-  }
+  const out = micFeed(micSt, { rms: micLevel, midi: midiN, conf, now });
+  if (!out) return;
+  if (playMode === 5 && hold) melRelease();
+  if (out.press) submit(-1, { midi: out.press });
 }
 function drawMicHint() {
   if (!MIC.run || msgT > 0 || scene !== "game") return;
@@ -2548,10 +2627,11 @@ else if (scene === "stats") drawStats();
 drawUpdateBanner();
 }
 }
-let last = performance.now();
+let last = performance.now(), lastW = 0, lastH = 0;
 function frame(t) {
 const dt = Math.min(0.05, (t - last) / 1000);
 last = t;
+if (innerWidth !== lastW || innerHeight !== lastH) { lastW = innerWidth;  lastH = innerHeight;  onResize(); }   // por si el sistema no avisó del cambio de tamaño
 const moving = update(dt);
 if (finishAt && performance.now() >= finishAt) { finishAt = 0; finishSession(); }
 buildUI();
@@ -2564,6 +2644,7 @@ requestAnimationFrame(frame);
 }
 function onResize() { layout(); dirty = true; }
 addEventListener("resize", onResize);
+addEventListener("pageshow", () => { onResize(); });
 addEventListener("orientationchange", () => setTimeout(onResize, 120));
 if (window.visualViewport) window.visualViewport.addEventListener("resize", onResize);
 document.addEventListener("fullscreenchange", onResize);
@@ -2576,7 +2657,9 @@ syncHist();
 if (S.midi) initMidi();
 requestAnimationFrame(frame);
 }
-addEventListener("load", () => {
+let booted = false;
+const boot = () => {
+  if (booted) return;  booted = true;
   const t0 = performance.now(), sp = document.getElementById("splash"), fill = document.getElementById("splashFill"), msgEl = document.getElementById("splashMsg");
   const setP = (p, t) => { if (fill) fill.style.width = Math.round(p * 100) + "%"; if (msgEl && t !== undefined) msgEl.textContent = t; };
   try { loadSettings();  if (fill) fill.style.background = AC.acc; } catch (e) {}          // la barra usa el color de acento elegido
@@ -2594,7 +2677,9 @@ addEventListener("load", () => {
       if (sp) { sp.classList.add("off");  setTimeout(() => { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 450); }
     }, wait);
   });
-});
+};
+addEventListener("load", boot);
+setTimeout(boot, 4000);                                    // si "load" tarda (red lenta), se arranca igualmente
 </script>
 <style>
 @font-face {
