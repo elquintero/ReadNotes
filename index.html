@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.4.5", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.0", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -141,6 +141,7 @@ S.piano  = raw.piano !== false;
 S.vol    = clamp(int(raw.vol, 7), 0, 10);
 S.haptic = raw.haptic !== false;
 S.melHold = raw.melHold !== false;
+S.goal = clamp(int(raw.goal, 64), 0, 5000);                // objetivo diario en notas (0 = desactivado)
 S.layoutP = raw.layoutP === 0 ? 0 : 1;          // 0 = círculo · 1 = teclado virtual (por defecto)
 S.layoutL = raw.layoutL === 0 ? 0 : 1;
 S.octVerify = raw.octVerify === true;
@@ -677,7 +678,7 @@ function act0(id) {
     case "t_review": if (SD) startSession(true, SD.clefs); return;
     case "update": applyUpdate(); return;
     case "upd_x": updDismissed = true; dirty = true; return;
-    case "install": return;   // se lanza en el evento click (gesto del usuario)
+    case "install": case "bk_exp": case "bk_imp": return;   // se lanza en el evento click (gesto del usuario)
     case "s_again": go(playMode === 5 && mel ? "melodies" : "clefs"); return;
     case "t_chart": ST.metric = (ST.metric + 1) % 3; dirty = true; return;
     case "t_clear":
@@ -704,6 +705,11 @@ function act0(id) {
     case "hap_off": S.haptic = false; break;
     case "mh_on":  S.melHold = true;  break;
     case "mh_off": S.melHold = false; break;
+    case "goal_-": case "goal_+": {
+      const G = [0, 32, 64, 96, 128, 192, 256, 384, 512], cur = G.reduce((b, v, i) => (Math.abs(v - S.goal) < Math.abs(G[b] - S.goal) ? i : b), 0);
+      S.goal = G[clamp(cur + (id === "goal_+" ? 1 : -1), 0, G.length - 1)];
+      break;
+    }
     case "lay_p": S.layoutP = S.layoutP === 1 ? 0 : 1;  layout(); break;
     case "lay_l": S.layoutL = S.layoutL === 1 ? 0 : 1;  layout(); break;
     case "oct_on":  S.octVerify = true;   layout(); break;
@@ -760,10 +766,15 @@ const rows = [
 { k: "sw", label: "Vibraciones", value: S.haptic ? "Habilitado" : "Deshabilitado", on: S.haptic, id: S.haptic ? "hap_off" : "hap_on" },
 { k: "sw", label: "Mantener notas en melodías", value: S.melHold ? "Mantén cada nota lo que dura" : "Un toque basta para avanzar", on: S.melHold, id: S.melHold ? "mh_off" : "mh_on" }
 ];
-if (navigator.requestMIDIAccess) rows.push({ k: "sw", label: "Teclado MIDI", value: S.midi ? "Habilitado" : "Deshabilitado", on: S.midi, id: S.midi ? "midi_off" : "midi_on" });
+if (navigator.requestMIDIAccess) {
+  const mi = midiAccess ? [...midiAccess.inputs.values()].filter((i) => i.state === "connected") : [];
+  const val = !S.midi ? "Deshabilitado" : mi.length ? "Habilitado · conectado (" + (mi[0].name || "teclado") + (mi.length > 1 ? " +" + (mi.length - 1) : "") + ")" : "Habilitado · sin teclado conectado";
+  rows.push({ k: "sw", label: "Teclado MIDI", value: val, on: S.midi, id: S.midi ? "midi_off" : "midi_on" });
+}
 rows.push({ k: "sw", label: "Práctica adaptativa", value: S.adapt ? "Más práctica en tus notas débiles" : "Notas totalmente al azar", on: S.adapt, id: S.adapt ? "adapt_off" : "adapt_on" });
 rows.push({ k: "sw", label: "Micrófono", value: S.mic ? "Escucha la nota que cantas o tocas durante la partida" : micErr || "Responde con la voz o un instrumento", on: S.mic, id: S.mic ? "mic_off" : "mic_on" });
 rows.push({ k: "sw", label: "Verificación de octavas", value: S.octVerify ? "Se comprueba la octava exacta de la nota" : "Las notas introducidas pueden estar en cualquier octava", on: S.octVerify, id: S.octVerify ? "oct_off" : "oct_on" });
+rows.push({ k: "step", label: "Objetivo diario", value: S.goal ? S.goal + " notas al día" : "Desactivado", minus: "goal_-", plus: "goal_+" });
 rows.push({ k: "hd", label: "Apariencia" });
 rows.push({ k: "tap", label: "Tema de la aplicación", value: S.skin === 1 ? "Oscuro" : "Clásico", id: S.skin === 1 ? "skin_0" : "skin_1" });
 rows.push({ k: "colors", label: "Color de Acento" });
@@ -772,12 +783,20 @@ rows.push({ k: "tap", label: "Disposición de las notas (apaisado)", value: S.la
 rows.push({ k: "step", label: "Tamaño de las notas", value: SZ_NAME[S.nsize], minus: "nsz_-", plus: "nsz_+" });
 if (fsSupported()) rows.push({ k: "sw", label: "Pantalla completa", value: isFs() ? "Activada" : "Desactivada", on: isFs(), id: isFs() ? "fs_off" : "fs_on" });
 else rows.push({ k: "note", label: "iPhone: Compartir › Añadir a pantalla de inicio" });
-if (deferredInstall || updReady) rows.push({ k: "hd", label: "Aplicación" });
-if (deferredInstall) rows.push({ k: "tap", label: "Instalar app", value: "Añádela a tu pantalla de inicio o escritorio", id: "install" });
+rows.push({ k: "hd", label: "Aplicación" });
+{
+  const standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+  if (standalone) rows.push({ k: "tap", label: "Instalar app", value: "Ya está instalada en este dispositivo", id: "noop" });
+  else if (deferredInstall) rows.push({ k: "tap", label: "Instalar app", value: "Añádela a tu pantalla de inicio o escritorio", id: "install" });
+  else rows.push({ k: "tap", label: "Instalar app", value: /iphone|ipad|ipod/i.test(navigator.userAgent) ? "Safari: Compartir › Añadir a pantalla de inicio" : "Menú del navegador › Instalar aplicación", id: "noop" });
+}
 if (updReady) rows.push({ k: "tap", label: "Nueva versión disponible", value: "Toca para actualizar ahora", id: "update" });
 rows.push({ k: "hd", label: "Créditos" });
 rows.push({ k: "note", tight: true, small: true, label: "Diseño y Desarrollado por:  J.L Quintero" });
 rows.push({ k: "note", tight: true, label: "Piano: tonejs-instruments (N. Brosowsky), CC BY 3.0" });
+rows.push({ k: "hd", label: "Copia de seguridad" });
+rows.push({ k: "tap", label: "Exportar estadísticas", value: sessions.length + (sessions.length === 1 ? " sesión" : " sesiones") + " · se guarda un archivo .json", id: "bk_exp" });
+rows.push({ k: "tap", label: "Importar estadísticas", value: bkMsg || "Suma las de un archivo .json a las actuales", id: "bk_imp" });
 return rows;
 }
 // los botones salen de lo que se dibuja (cada pantalla los registra con addHit)
@@ -851,6 +870,8 @@ for (const b of buttons) {
 if (!hit(b, p)) continue;
 const el = document.documentElement;
 if (b.id === "install") { doInstall(); break; }
+if (b.id === "bk_exp") { exportStats(); break; }
+if (b.id === "bk_imp") { importStats(); break; }
 if (b.id === "fs_on") {
 const req = el.requestFullscreen || el.webkitRequestFullscreen;
 try { const r = req.call(el); if (r && r.catch) r.catch(() => {}); } catch (_) {}
@@ -1041,7 +1062,7 @@ msg = "MIDI: " + (inp.name || "teclado");  msgOk = true;  msgT = 2.5;  dirty = t
 function initMidi() {
 if (midiAccess) { bindMidi(); return; }
 if (!navigator.requestMIDIAccess) return;
-navigator.requestMIDIAccess().then((a) => { midiAccess = a; a.onstatechange = bindMidi; bindMidi(); }).catch(() => {});
+navigator.requestMIDIAccess().then((a) => { midiAccess = a; a.onstatechange = () => { bindMidi(); dirty = true; }; bindMidi(); dirty = true; }).catch(() => {});
 }
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 // Android vibra por sí solo en una pulsación larga: se evita en las melodías (no afecta a la opción de vibraciones)
@@ -1942,7 +1963,56 @@ document.addEventListener("visibilitychange", () => micSync());
 
 const noteLabel = (step) => nameOf(mod(step, 7)) + (4 + Math.floor(step / 7));
 const accCol = (a) => (a >= 0.9 ? AC.ok : a >= 0.7 ? AC.mid : AC.bad);
-function fmtTime(ms) { const s = Math.round(ms / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
+/* ---------- copia de seguridad de estadísticas ---------- */
+let bkMsg = "";
+function exportStats() {
+  const d = new Date(), ymd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  const blob = new Blob([JSON.stringify({ app: APP_NAME, tipo: "estadisticas", version: 1, exportado: d.toISOString(), sesiones: sessions })], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);  a.download = "readnotes-estadisticas-" + ymd + ".json";
+  document.body.appendChild(a);  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href);  a.remove(); }, 1500);
+  bkMsg = sessions.length + " sesiones guardadas en el archivo";  dirty = true;
+}
+function importStats() {
+  const inp = document.createElement("input");
+  inp.type = "file";  inp.accept = "application/json,.json";
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0];
+    if (!f) return;
+    try {
+      const j = JSON.parse(await f.text()), arr = Array.isArray(j) ? j : j.sesiones;
+      if (!Array.isArray(arr)) throw new Error("formato");
+      const ok = arr.filter((s) => s && typeof s.t === "number" && Array.isArray(s.n) && s.n.every((e) => Array.isArray(e) && e.length >= 4));
+      const key = (s) => s.t + "_" + s.m + "_" + s.n.length, have = new Set(sessions.map(key));
+      let add = 0;
+      for (const s of ok) if (!have.has(key(s))) { sessions.push(s);  have.add(key(s));  add++; }
+      sessions.sort((a, b) => a.t - b.t);
+      saveSessions();  computeStats();
+      bkMsg = add + (add === 1 ? " sesión importada" : " sesiones importadas") + (ok.length > add ? " (" + (ok.length - add) + " ya estaban)" : "");
+    } catch (e) { bkMsg = "El archivo no es una copia válida de ReadNotes"; }
+    dirty = true;
+  };
+  inp.click();
+}
+
+/* ---------- racha de días y objetivo diario ---------- */
+function dayIdx(t) { const d = new Date(t); return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000); }
+function streakInfo() {
+  const days = new Map();
+  for (const s of sessions) { const k = dayIdx(s.t);  days.set(k, (days.get(k) || 0) + s.n.length); }
+  const today = dayIdx(Date.now());
+  let cur = 0, k = days.has(today) ? today : today - 1;
+  while (days.has(k)) { cur++;  k--; }
+  let best = 0, run = 0, prev = null;
+  for (const d of [...days.keys()].sort((a, b) => a - b)) { run = prev !== null && d === prev + 1 ? run + 1 : 1;  best = Math.max(best, run);  prev = d; }
+  return { cur, best, today: days.get(today) || 0, alive: days.has(today) };
+}
+function fmtTime(ms) {
+  const s = Math.round(ms / 1000);
+  if (s >= 3600) return Math.floor(s / 3600) + " h " + String(Math.floor((s % 3600) / 60)).padStart(2, "0") + " min";   // más de una hora
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
 function niceMax(v) {
   const mag = Math.pow(10, Math.floor(Math.log10(v))), n = v / mag;
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
@@ -2338,6 +2408,23 @@ function drawStats() {
   drawBar("Estadísticas", { back: "back", actions: [{ id: "t_clear", label: conf ? "¿Seguro?" : "Borrar", warn: conf }, { id: "open", icon: "gear" }] });
   clipRect(0, hdrH, L.vw, L.vh - hdrH);
   let y = hdrH + pad - scrollY;
+  {                                                        // racha y objetivo de hoy (no dependen de los filtros)
+    const si = streakInfo(), sg = 10, scw = (w - sg) / 2, sch = clamp(w * 0.19, 62, 80);
+    statCard(x, y, scw, sch, "Racha actual", si.cur + (si.cur === 1 ? " día" : " días"), si.alive ? "¡Hoy ya has practicado!" : si.cur ? "Practica hoy para mantenerla" : "Practica hoy para empezar", si.alive ? AC.ok : AC.dim, si.cur ? AC.accT : AC.txt);
+    statCard(x + scw + sg, y, scw, sch, "Mejor racha", si.best + (si.best === 1 ? " día" : " días"), "", AC.dim, AC.txt);
+    y += sch + sg;
+    const oh = clamp(w * 0.22, 74, 92), done = S.goal > 0 && si.today >= S.goal;
+    panel(x, y, w, oh);
+    text("Objetivo de hoy", x + 14, y + oh * 0.24, clamp(oh * 0.16, 11, 13), AC.dim, "left");
+    text(S.goal ? si.today + " / " + S.goal + " notas" : si.today + (si.today === 1 ? " nota" : " notas"), x + w - 14, y + oh * 0.24, clamp(oh * 0.2, 13, 16), done ? AC.ok : AC.txt, "right", "bold");
+    if (S.goal) {
+      const bx = x + 14, bw2 = w - 28, by = y + oh * 0.46, bh2 = 10;
+      ctx.fillStyle = "#3a3a3a";  rr(bx, by, bw2, bh2, 5);  ctx.fill();
+      if (si.today > 0) { ctx.fillStyle = done ? AC.ok : AC.accV;  rr(bx, by, Math.max(bh2, bw2 * Math.min(1, si.today / S.goal)), bh2, 5);  ctx.fill(); }
+      text(done ? "¡Objetivo cumplido!" : "Te faltan " + (S.goal - si.today) + " notas", x + 14, y + oh * 0.8, clamp(oh * 0.16, 11, 13), done ? AC.ok : AC.dim, "left");
+    } else text("Define un objetivo diario en Ajustes", x + 14, y + oh * 0.7, clamp(oh * 0.16, 11, 13), AC.dim, "left");
+    y += oh + pad * 1.4;
+  }
   const segH = clamp(w * 0.1, 38, 46), lblW = w * 0.2;
   text("Clave", x + 2, y + segH / 2, fs, AC.dim, "left");
   seg(x + lblW, y, w - lblW, segH, ["Todas", "Sol", "Fa"], ST.clef + 1, "tf_", [-1, 0, 1]);
@@ -2389,6 +2476,24 @@ function drawStats() {
       y += 24;
     }
     y += pad;
+    {                                                      // notas más difíciles (por fallos y, si no hay, por tiempo)
+      const hard = SD.notes.filter((a) => a.n + a.bad >= 3).map((a) => ({ a, er: a.bad / (a.n + a.bad), tm: a.ms / a.n / 1000 })).sort((p, q) => q.er - p.er || q.tm - p.tm).slice(0, 5);
+      if (hard.length) {
+        text(hard.every((h) => h.er === 0) ? "NOTAS MÁS LENTAS" : "NOTAS MÁS DIFÍCILES", x + 2, y + 6, 12, AC.dim, "left", "bold");
+        y += 24;
+        const hr = clamp(w * 0.1, 40, 48);
+        panel(x, y, w, hr * hard.length);
+        hard.forEach(({ a, er, tm }, i) => {
+          const ry = y + hr * i + hr / 2;
+          if (i) line(x + 12, y + hr * i, x + w - 12, y + hr * i, "#353535", 1);
+          ctx.fillStyle = clefCol(a.clef);  ctx.beginPath();  ctx.arc(x + 20, ry, 5, 0, Math.PI * 2);  ctx.fill();
+          text(noteLabel(a.step), x + 36, ry, fs + 2, AC.txt, "left", "bold");
+          text(a.bad ? a.bad + (a.bad === 1 ? " fallo" : " fallos") + " de " + (a.n + a.bad) : a.n + " veces", x + w * 0.66, ry, fs, er > 0 ? AC.bad : AC.dim, "right");
+          text(tm.toFixed(1) + " s", x + w - 14, ry, fs, AC.dim, "right");
+        });
+        y += hr * hard.length + pad * 1.2;
+      }
+    }
     // notas
     const rh = clamp(w * 0.085, 38, 46);
     for (const c of SD.clefs) {
