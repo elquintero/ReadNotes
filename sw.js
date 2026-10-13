@@ -1,7 +1,7 @@
 /* ReadNotes – service worker (funciona sin conexión)
    Cambia VERSION en cada publicación: así los móviles detectan la nueva versión
    y muestran el aviso "Nueva versión disponible". */
-const VERSION = "1.5.11";
+const VERSION = "1.5.12";
 const CACHE = "readnotes-" + VERSION;
 const SOUND = "readnotes-sound";            // muestras de piano: se conservan entre versiones
 const MELO = "readnotes-melodias";         // lista y partituras de melodías: se conservan entre versiones
@@ -16,7 +16,7 @@ const ASSETS = [
   "icons/favicon-32.png"
 ];
 // Archivos opcionales: si faltan en el repositorio no deben romper la instalación del service worker
-const OPTIONAL = ["fonts/Bravura.otf", "Fonts/Bravura.otf", "icons/logo-oscuro.png"];
+const OPTIONAL = ["fonts/Bravura.otf", "Fonts/Bravura.otf", "icons/logo-claro.png"];
 
 self.addEventListener("install", (e) => {
   // Sin skipWaiting automático: la app avisa y el usuario decide cuándo actualizar

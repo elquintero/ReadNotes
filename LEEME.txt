@@ -1,8 +1,10 @@
-ReadNotes 1.5.11
+ReadNotes 1.5.12
 
 SUBIR: index.html, sw.js, manifest.webmanifest y la carpeta icons/ (sustituyen a los actuales). El resto no cambia.
 
 Novedades
+- Pantalla de carga de la app BLANCA con el logo transparente (libro oscuro). Manifest background_color negro (#000000) para la barra de Android.
+  Iconos maskable y apple-touch: fondo negro con libro blanco. icons/logo-oscuro.png ya no se usa; icons/logo-claro.png vuelve a usarse.
 - Inicio NEGRO (manifest background_color #000000, pantalla de carga negra y logo con libro blanco) para que la barra de navegación de Android sea negra.
   Iconos maskable y apple-touch con fondo negro. icons/logo-oscuro.png es nuevo (logo transparente con libro blanco).
 - Melodías: el relleno del selector de nota al mantenerla tiene los mismos bordes redondeados y el mismo ancho que el selector.
