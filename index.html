@@ -32,18 +32,18 @@ position: fixed; visibility: hidden; pointer-events: none;
 padding: env(safe-area-inset-top) env(safe-area-inset-right)
 env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
-#splash { position: fixed; inset: 0; z-index: 50; background: #dce9ed; display: flex; align-items: center; justify-content: center; transition: opacity .35s ease; }
+#splash { position: fixed; inset: 0; z-index: 50; background: #000000; display: flex; align-items: center; justify-content: center; transition: opacity .35s ease; }
 #splash.off { opacity: 0; pointer-events: none; }
 #splashBox { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 24px; width: min(78vw, 300px); }
 #splashLogo { width: 112px; height: 112px; }
-#splashName { font: 600 26px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #222222; letter-spacing: .3px; }
-#splashBar { width: 100%; height: 6px; border-radius: 3px; background: #000000; overflow: hidden; }
+#splashName { font: 600 26px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #e6e6e6; letter-spacing: .3px; }
+#splashBar { width: 100%; height: 6px; border-radius: 3px; background: #3a3a3a; overflow: hidden; }
 #splashFill { display: block; height: 100%; width: 8%; background: #2a6f86; border-radius: 3px; transition: width .3s ease; }
-#splashMsg { font: 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #6b6f76; min-height: 16px; text-align: center; }
+#splashMsg { font: 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #8d8d8d; min-height: 16px; text-align: center; }
 </style>
 </head>
 <body>
-<div id="splash"><div id="splashBox"><img id="splashLogo" src="icons/icon-192.png" alt="" width="112" height="112"><div id="splashName">ReadNotes</div><div id="splashBar"><i id="splashFill"></i></div><div id="splashMsg">Cargando…</div></div></div>
+<div id="splash"><div id="splashBox"><img id="splashLogo" src="icons/logo-oscuro.png" alt="" width="112" height="112"><div id="splashName">ReadNotes</div><div id="splashBar"><i id="splashFill"></i></div><div id="splashMsg">Cargando…</div></div></div>
 <canvas id="c"></canvas>
 <div id="safe"></div>
 <script>
@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.10", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.11", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -108,7 +108,7 @@ const THEME_DARK = {
 };
 const THEME_LIGHT = {
   light: true, bg: "#f6f7f9", card: "#ffffff", edge: "#dde0e5", txt: "#222222", dim: "#6b6f76", faint: "#8a8f96", txtHi: "#1b1b1b", white: "#000000",
-  line: "#e1e3e7", hov: "rgba(0,0,0,.04)", hov2: "rgba(0,0,0,.06)", hov3: "rgba(0,0,0,.08)", trough: "#000000", grid: "#e3e5e9", chev: "#9aa0a8",
+  line: "#e1e3e7", hov: "rgba(0,0,0,.04)", hov2: "rgba(0,0,0,.06)", hov3: "rgba(0,0,0,.08)", trough: "#dfe2e6", grid: "#e3e5e9", chev: "#9aa0a8",
   ctl: "#ffffff", ctlH: "#eceef1", ctlEdge: "#c9cdd3", btnEdge: "#aab0b8", btnFill: "rgba(255,255,255,.9)", btnFillH: "rgba(0,0,0,.06)",
   swOff: "#c9cdd3", knobOn: "#ffffff", knobOff: "#ffffff", swEdge: "#cfd3d9", ring: "#222222", ringH: "rgba(0,0,0,.3)",
   inset: "#eef0f3", chip: "#ffffff", chipH: "#e4e7ec", chipEdge: "#cdd1d8", chipTxt: "#6b6f76", chipOn: "#1b1b1b", chipOnA: 0.18, badgeMix: "#ffffff",
