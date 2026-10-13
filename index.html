@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.9", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.10", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -1216,9 +1216,12 @@ ctx.fillStyle = AC.light ? "rgba(0,0,0,.07)" : "rgba(255,255,255,.12)";
 if (true) { rr(noteX(cur) - L.gap * 0.4, p.y, L.gap * 0.8, p.h, L.sp * 0.7); ctx.fill(); }
 else ctx.fillRect(noteX(cur) - L.gap * 0.42, p.y + 6, L.gap * 0.84, p.h - 12);
 if (hold && hold.note === cur) {                    // melodías: la columna se llena mientras mantienes la nota
-  const f = clamp((performance.now() - hold.t0) / hold.need, 0, 1), hh2 = p.h - 12;
+  const f = clamp((performance.now() - hold.t0) / hold.need, 0, 1);
+  ctx.save();                                              // el relleno se recorta con la misma forma redondeada del selector: mismos bordes y mismo ancho
+  rr(noteX(cur) - L.gap * 0.4, p.y, L.gap * 0.8, p.h, L.sp * 0.7);  ctx.clip();
   ctx.fillStyle = AC.light ? "rgba(0,0,0,.13)" : "rgba(255,255,255,.2)";
-  ctx.fillRect(noteX(cur) - L.gap * 0.42, p.y + 6 + hh2 * (1 - f), L.gap * 0.84, hh2 * f);
+  ctx.fillRect(noteX(cur) - L.gap * 0.4, p.y + p.h * (1 - f), L.gap * 0.8, p.h * f);
+  ctx.restore();
 }
 }
 for (const n of notes) {
