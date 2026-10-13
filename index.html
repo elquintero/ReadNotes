@@ -17,7 +17,7 @@
 <style>
 html, body {
 margin: 0; padding: 0; height: 100%;
-background: #f6f7f9;
+background: #ffffff;
 overflow: hidden;
 overscroll-behavior: none;
 touch-action: none;
@@ -32,7 +32,7 @@ position: fixed; visibility: hidden; pointer-events: none;
 padding: env(safe-area-inset-top) env(safe-area-inset-right)
 env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
-#splash { position: fixed; inset: 0; z-index: 50; background: #f6f7f9; display: flex; align-items: center; justify-content: center; transition: opacity .35s ease; }
+#splash { position: fixed; inset: 0; z-index: 50; background: #ffffff; display: flex; align-items: center; justify-content: center; transition: opacity .35s ease; }
 #splash.off { opacity: 0; pointer-events: none; }
 #splashBox { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 24px; width: min(78vw, 300px); }
 #splashLogo { width: 112px; height: 112px; }
@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.6", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.7", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
