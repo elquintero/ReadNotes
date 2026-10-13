@@ -1,8 +1,9 @@
-ReadNotes 1.5.4
+ReadNotes 1.5.5
 
 SUBIR: index.html, sw.js, manifest.webmanifest y la carpeta icons/ (sustituyen a los actuales). El resto no cambia.
 
 Novedades
+- Nuevo icono de ajustes (engranaje de trazo).
 - Todos los iconos (192, 512, maskable, apple-touch y favicon) con fondo transparente.
 - Pantalla de inicio de Android y pantalla de carga de la app con el MISMO color (#f6f7f9), sin salto entre una y otra.
   Android toma ese color de manifest.webmanifest (background_color) al instalar la app, por eso no puede cambiar con el tema.
