@@ -1,8 +1,9 @@
-ReadNotes 1.5.13
+ReadNotes 1.5.14
 
 SUBIR: index.html, sw.js, manifest.webmanifest y la carpeta icons/ (sustituyen a los actuales). El resto no cambia.
 
 Novedades
+- Círculo de notas: cada nota es un círculo relleno con el borde del color de acento (temas Claro y Oscuro).
 - Icono de la pantalla de inicio de Android (maskable y apple-touch) con fondo BLANCO y libro oscuro.
 - Pantalla de carga de la app BLANCA con el logo transparente (libro oscuro). Manifest background_color negro (#000000) para la barra de Android.
   Iconos maskable y apple-touch: fondo negro con libro blanco. icons/logo-oscuro.png ya no se usa; icons/logo-claro.png vuelve a usarse.

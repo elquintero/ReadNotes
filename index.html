@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.13", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.14", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -1301,30 +1301,38 @@ ctx.fillStyle = AC.hdFill;  ctx.fillRect(L.cx0, y - 4, bw * Math.min(okCount + 1
 }
 }
 function drawWheelDark() {
-const w = L.wheel, R = w.ring, seg = (Math.PI * 2) / 7, g = 0.19;
-ctx.strokeStyle = AC.arc;  ctx.lineWidth = Math.max(1.5, R * 0.011);
+const w = L.wheel, R = w.ring, seg = (Math.PI * 2) / 7, lw = Math.max(1.5, R * 0.011);
+// cada nota es un círculo relleno con el borde del color de acento; entre ellos, arcos finos
+const dot = (cx, cy, r, fill, flash) => {
+  ctx.fillStyle = fill;  ctx.beginPath();  ctx.arc(cx, cy, r, 0, Math.PI * 2);  ctx.fill();
+  ctx.strokeStyle = flash || AC.accV;  ctx.lineWidth = lw;  ctx.stroke();
+};
+const rO = R * 0.17, gO = Math.asin(rO / R) + 0.06;
+ctx.strokeStyle = AC.arc;  ctx.lineWidth = lw;
 for (let i = 0; i < 7; i++) {
 const mid = -Math.PI / 2 + i * seg;
-ctx.beginPath();  ctx.arc(w.cx, w.cy, R, mid + g, mid + seg - g);  ctx.stroke();
+ctx.beginPath();  ctx.arc(w.cx, w.cy, R, mid + gO, mid + seg - gO);  ctx.stroke();
 }
 for (let i = 0; i < 7; i++) {
-const mid = -Math.PI / 2 + i * seg;
-let col = i === hoverIdx ? AC.wheelTxtH : AC.wheelTxt;
-if (i === flashIdx && flashT > 0) col = flashOk ? AC.ok : AC.fail;
-text(nameOf(i), w.cx + Math.cos(mid) * R, w.cy + Math.sin(mid) * R, clamp(R * 0.18, 14, 44), col, "center");
+const mid = -Math.PI / 2 + i * seg, x = w.cx + Math.cos(mid) * R, y = w.cy + Math.sin(mid) * R;
+let fill = i === hoverIdx ? AC.segH : AC.seg, tc = AC.txt;
+if (i === flashIdx && flashT > 0) { fill = flashOk ? AC.okSeg : AC.fail;  tc = "#ffffff"; }
+dot(x, y, rO, fill);
+text(nameOf(i), x, y, clamp(R * 0.18, 14, 44), tc, "center");
 }
 if (curKey) {                                      // círculo interior: las 7 notas con la alteración de la armadura (Sol en la parte baja, como en la imagen de referencia)
-  const R2 = R * 0.6, g2 = 0.34;
-  ctx.strokeStyle = AC.arc;  ctx.lineWidth = Math.max(1.5, R * 0.011);
+  const R2 = R * 0.6, rI = R * 0.125, gI = Math.asin(rI / R2) + 0.07;
+  ctx.strokeStyle = AC.arc;  ctx.lineWidth = lw;
   for (let i = 0; i < 7; i++) {
     const mid = Math.PI / 2 + (i - 4) * seg;
-    ctx.beginPath();  ctx.arc(w.cx, w.cy, R2, mid + g2, mid + seg - g2);  ctx.stroke();
+    ctx.beginPath();  ctx.arc(w.cx, w.cy, R2, mid + gI, mid + seg - gI);  ctx.stroke();
   }
   for (let i = 0; i < 7; i++) {
-    const mid = Math.PI / 2 + (i - 4) * seg, id = 10 + i;
-    let col = id === hoverIdx ? AC.wheelTxtH : AC.wheelTxt;
-    if (id === flashIdx && flashT > 0) col = flashOk ? AC.ok : AC.fail;
-    nameAcc(nameOf(i), curKey.type, w.cx + Math.cos(mid) * R2, w.cy + Math.sin(mid) * R2, clamp(R * 0.135, 11, 32), col);
+    const mid = Math.PI / 2 + (i - 4) * seg, id = 10 + i, x = w.cx + Math.cos(mid) * R2, y = w.cy + Math.sin(mid) * R2;
+    let fill = id === hoverIdx ? AC.segH : AC.seg, tc = AC.txt;
+    if (id === flashIdx && flashT > 0) { fill = flashOk ? AC.okSeg : AC.fail;  tc = "#ffffff"; }
+    dot(x, y, rI, fill);
+    nameAcc(nameOf(i), curKey.type, x, y, clamp(R * 0.11, 10, 28), tc);
   }
 }
 }
