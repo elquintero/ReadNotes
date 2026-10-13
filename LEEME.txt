@@ -1,11 +1,10 @@
-ReadNotes 1.5.0
+ReadNotes 1.5.3
 
-SUBIR: index.html y sw.js (sustituyen a los actuales). El resto no cambia.
+SUBIR: index.html, sw.js y manifest.webmanifest (sustituyen a los actuales). El resto no cambia.
 
 Novedades
-- Estadísticas: racha de días, mejor racha, objetivo diario con barra de progreso y "Notas más difíciles".
-- Tiempo: a partir de una hora se muestra en horas ("2 h 07 min").
-- Ajustes: "Objetivo diario" (0 = desactivado, 32 ... 512 notas), "Instalar app" siempre visible,
-  Teclado MIDI muestra "Habilitado · conectado (nombre)" o "sin teclado conectado",
-  y al final "Copia de seguridad": exportar / importar estadisticas (.json).
-- Importar SUMA las sesiones del archivo a las actuales sin duplicar las que ya estaban.
+- Pantalla de inicio de Android y pantalla de carga de la app con el MISMO color (#f6f7f9), sin salto entre una y otra.
+  Android toma ese color de manifest.webmanifest (background_color) al instalar la app, por eso no puede cambiar con el tema.
+  Si quieres que sean oscuras: cambia background_color en manifest.webmanifest y los colores del bloque #splash de index.html.
+- Android guarda el color al instalar: para verlo en la pantalla de inicio hay que desinstalar la app y volver a instalarla.
+- Tema "Claro" (antes "Clásico") con toda la interfaz clara; el tema "Oscuro" no cambia.
