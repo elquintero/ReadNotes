@@ -1,13 +1,14 @@
-ReadNotes 1.5.7
+ReadNotes 1.5.8
 
 SUBIR: index.html, sw.js, manifest.webmanifest y la carpeta icons/ (sustituyen a los actuales). El resto no cambia.
 
 Novedades
+- Color de inicio azul grisáceo claro (#dce9ed): prueba para que la barra de navegación de Android no sea blanca.
 - Fondo de inicio blanco: el círculo blanco del icono en Android se funde con la pantalla.
 - Nuevo icono de ajustes (engranaje de trazo).
 - Iconos maskable y apple-touch con fondo blanco (Android pintaba un círculo negro sobre el icono transparente).
 - Todos los iconos (192, 512, maskable, apple-touch y favicon) con fondo transparente.
-- Pantalla de inicio de Android y pantalla de carga de la app con el MISMO color (blanco, #ffffff), sin salto entre una y otra.
+- Pantalla de inicio de Android y pantalla de carga de la app con el MISMO color (#dce9ed, azul grisáceo claro), sin salto entre una y otra.
   Android toma ese color de manifest.webmanifest (background_color) al instalar la app, por eso no puede cambiar con el tema.
   Si quieres que sean oscuras: cambia background_color en manifest.webmanifest y los colores del bloque #splash de index.html.
 - Android guarda el color al instalar: para verlo en la pantalla de inicio hay que desinstalar la app y volver a instalarla.
