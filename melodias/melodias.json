@@ -203,18 +203,11 @@
       "categoria": "bandas-sonoras"
     },  
     {
-      "id": "spring",
-      "titulo": "Spring from the Four",
-      "autor": "Antonio Vivaldi",
-      "archivo": "springfromthefour.mxl",
-      "categoria": "clasica"
-    },
-    {
       "id": "melodia",
       "titulo": "Melodia",
       "autor": "Alberto Nepomuceno",
       "archivo": "melodia.mxl",
-      "categoria": "bandas-sonoras"
+      "categoria": "clasica"
     }
   ]
 }
