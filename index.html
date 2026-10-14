@@ -56,7 +56,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.16", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.17", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -1300,13 +1300,14 @@ ctx.fillStyle = AC.hdTrack;  ctx.fillRect(L.cx0, y - 4, bw, 8);
 ctx.fillStyle = AC.hdFill;  ctx.fillRect(L.cx0, y - 4, bw * Math.min(okCount + 1, SN()) / SN(), 8);
 }
 }
+const DOT_EDGE = 0.67, DOT_LIGHT = 0.25;            // borde de acento al 67 % de opacidad (33 % transparente) · acierto/fallo aclarados un 25 %
 const DOT_SOFT = 0.5;                              // relleno de los círculos de notas: 50 % más tenue (se mezcla con el fondo); el borde de acento no cambia
 function drawWheelDark() {
 const w = L.wheel, R = w.ring, seg = (Math.PI * 2) / 7, lw = Math.max(1.5, R * 0.011);
 // cada nota es un círculo relleno con el borde del color de acento; entre ellos, arcos finos
-const dot = (cx, cy, r, fill, flash) => {
+const dot = (cx, cy, r, fill) => {
   ctx.fillStyle = fill;  ctx.beginPath();  ctx.arc(cx, cy, r, 0, Math.PI * 2);  ctx.fill();
-  ctx.strokeStyle = flash || AC.accV;  ctx.lineWidth = lw;  ctx.stroke();
+  ctx.strokeStyle = rgbaHex(AC.accV, DOT_EDGE);  ctx.lineWidth = lw;  ctx.stroke();
 };
 const rO = R * 0.17, gO = Math.asin(rO / R) + 0.06;
 ctx.strokeStyle = AC.arc;  ctx.lineWidth = lw;
@@ -1317,7 +1318,7 @@ ctx.beginPath();  ctx.arc(w.cx, w.cy, R, mid + gO, mid + seg - gO);  ctx.stroke(
 for (let i = 0; i < 7; i++) {
 const mid = -Math.PI / 2 + i * seg, x = w.cx + Math.cos(mid) * R, y = w.cy + Math.sin(mid) * R;
 let fill = mixHex(i === hoverIdx ? AC.segH : AC.seg, AC.bg, DOT_SOFT), tc = AC.txt;
-if (i === flashIdx && flashT > 0) { fill = flashOk ? AC.okSeg : AC.fail;  tc = "#ffffff"; }
+if (i === flashIdx && flashT > 0) { fill = mixHex(flashOk ? AC.okSeg : AC.fail, "#ffffff", DOT_LIGHT);  tc = "#ffffff"; }
 dot(x, y, rO, fill);
 text(nameOf(i), x, y, clamp(R * 0.18, 14, 44), tc, "center");
 }
@@ -1331,7 +1332,7 @@ if (curKey) {                                      // círculo interior: las 7 n
   for (let i = 0; i < 7; i++) {
     const mid = Math.PI / 2 + (i - 4) * seg, id = 10 + i, x = w.cx + Math.cos(mid) * R2, y = w.cy + Math.sin(mid) * R2;
     let fill = mixHex(id === hoverIdx ? AC.segH : AC.seg, AC.bg, DOT_SOFT), tc = AC.txt;
-    if (id === flashIdx && flashT > 0) { fill = flashOk ? AC.okSeg : AC.fail;  tc = "#ffffff"; }
+    if (id === flashIdx && flashT > 0) { fill = mixHex(flashOk ? AC.okSeg : AC.fail, "#ffffff", DOT_LIGHT);  tc = "#ffffff"; }
     dot(x, y, rI, fill);
     nameAcc(nameOf(i), curKey.type, x, y, clamp(R * 0.11, 10, 28), tc);
   }

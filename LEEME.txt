@@ -1,8 +1,9 @@
-ReadNotes 1.5.16
+ReadNotes 1.5.17
 
 SUBIR: index.html, sw.js, manifest.webmanifest y la carpeta icons/ (sustituyen a los actuales). El resto no cambia.
 
 Novedades
+- Círculos de notas: verde y rojo de acierto/fallo más claros (DOT_LIGHT) y borde de acento un 33 % transparente (DOT_EDGE = 0.67).
 - Pantalla de inicio de Android BLANCA (manifest background_color #ffffff): el icono de fondo blanco se funde con ella y coincide con la pantalla de carga de la app.
   Solo cambia manifest.webmanifest (y la versión). Hay que desinstalar y reinstalar la app para que Android lo recoja.
 - Círculos de notas: relleno un 50 % más tenue (constante DOT_SOFT en index.html; 0 = como antes, 1 = igual que el fondo). El borde de acento no cambia.
