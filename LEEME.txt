@@ -1,8 +1,11 @@
-ReadNotes 1.5.17
+ReadNotes 1.5.18
 
 SUBIR: index.html, sw.js, manifest.webmanifest y la carpeta icons/ (sustituyen a los actuales). El resto no cambia.
 
 Novedades
+- Arreglo: la app ya no se queda colgada en la pantalla de inicio al reabrirla tras apagar el móvil.
+  sw.js: la página de la red solo se usa si llega entera y con código 200; si no, se abre la copia guardada.
+  index.html: si la app no ha arrancado en 15 s se recarga sola (máx. 2 veces) y la pantalla de carga se quita siempre.
 - Círculos de notas: verde y rojo de acierto/fallo más claros (DOT_LIGHT) y borde de acento un 33 % transparente (DOT_EDGE = 0.67).
 - Pantalla de inicio de Android BLANCA (manifest background_color #ffffff): el icono de fondo blanco se funde con ella y coincide con la pantalla de carga de la app.
   Solo cambia manifest.webmanifest (y la versión). Hay que desinstalar y reinstalar la app para que Android lo recoja.

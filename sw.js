@@ -1,7 +1,7 @@
 /* ReadNotes – service worker (funciona sin conexión)
    Cambia VERSION en cada publicación: así los móviles detectan la nueva versión
    y muestran el aviso "Nueva versión disponible". */
-const VERSION = "1.5.17";
+const VERSION = "1.5.18";
 const CACHE = "readnotes-" + VERSION;
 const SOUND = "readnotes-sound";            // muestras de piano: se conservan entre versiones
 const MELO = "readnotes-melodias";         // lista y partituras de melodías: se conservan entre versiones
@@ -48,7 +48,15 @@ self.addEventListener("fetch", (e) => {
   if (req.mode === "navigate") {
     e.respondWith((async () => {
       const cache = await caches.open(CACHE);
-      const net = fetch(req, { cache: "no-cache" }).then((res) => { cache.put("index.html", res.clone()); return res; });
+      // La página de la red solo se usa si llega ENTERA y con código 200: se lee completa antes de entregarla. Si la red se corta a medias
+      // (p. ej. al despertar el móvil) o devuelve un error, se abre la copia guardada en vez de dejar la app colgada en la pantalla de inicio.
+      const net = fetch(req, { cache: "no-cache" }).then(async (res) => {
+        if (!res.ok) throw new Error("http " + res.status);
+        const buf = await res.arrayBuffer();
+        const full = () => new Response(buf, { status: 200, statusText: "OK", headers: res.headers });
+        cache.put("index.html", full()).catch(() => {});
+        return full();
+      });
       const cached = await cache.match("index.html");
       if (!cached) return net;
       e.waitUntil(net.catch(() => {}));
