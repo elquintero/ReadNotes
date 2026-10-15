@@ -194,6 +194,13 @@
       "autor": "Antonio Vivaldi",
       "archivo": "springfromthefour.mxl",
       "categoria": "clasica"
+    },  
+    {
+      "id": "cantatabwv147",
+      "titulo": "Cantata BWV 147",
+      "autor": "Bach",
+      "archivo": "cantatabwv147.mxl",
+      "categoria": "clasica"
     },
     {
       "id": "piratesofthecarribean",
