@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.18", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.19", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -235,7 +235,8 @@ const vw = Math.max(200, Math.round(vv ? vv.width  : innerWidth));
 const vh = Math.max(200, Math.round(vv ? vv.height : innerHeight));
 const dpr = Math.min(window.devicePixelRatio || 1, 3);
 cv.style.width  = vw + "px";  cv.style.height = vh + "px";
-cv.width = Math.round(vw * dpr);  cv.height = Math.round(vh * dpr);
+{ const cw0 = Math.round(vw * dpr), ch0 = Math.round(vh * dpr);
+  if (cv.width !== cw0) cv.width = cw0;  if (cv.height !== ch0) cv.height = ch0; }          // reasignar el lienzo lo reserva y borra de nuevo: solo si cambia el tamaño
 const sa = safeArea();
 const availW = vw - sa.l - sa.r;
 const cw  = Math.min(availW, MAX_W);
@@ -363,6 +364,15 @@ function pianoMidis(mode, key) {                    // notas (MIDI) que puede pe
   }
   return [...out].sort((x, y) => x - y);
 }
+function trimBuf(a, buf) {                          // playSample solo reproduce 3,3 s: se guarda ese trozo (+margen) y se libera el resto
+  try {
+    const n = Math.min(buf.length, Math.ceil(buf.sampleRate * 3.5));
+    if (n >= buf.length) return buf;
+    const out = a.createBuffer(buf.numberOfChannels, n, buf.sampleRate);
+    for (let c = 0; c < buf.numberOfChannels; c++) out.copyToChannel(buf.getChannelData(c).subarray(0, n), c);
+    return out;
+  } catch (e) { return buf; }
+}
 function pianoLoad(m) {
   if (pBuf.has(m) || pLoading.has(m) || pMiss.has(m) || pFail > 6) return Promise.resolve(null);
   const a = audio();
@@ -371,7 +381,7 @@ function pianoLoad(m) {
   const one = (k) => fetch(PIANO_DIRS[order[k]] + name + ".mp3").then((r) => { if (!r.ok) throw new Error("http " + r.status); pDir = order[k]; return r.arrayBuffer(); });
   const p = one(0).catch(() => one(1))
     .then((ab) => new Promise((res, rej) => { const q = a.decodeAudioData(ab, res, rej); if (q && q.catch) q.catch(rej); }))
-    .then((buf) => { pBuf.set(m, buf); pFail = 0; dirty = true; return buf; })
+    .then((buf) => { buf = trimBuf(a, buf); pBuf.set(m, buf); pFail = 0; if (settingsOpen) dirty = true; return buf; })
     .catch(() => { if (isBlackKey(m)) pMiss.add(m); else pFail++; return null; })     // un semitono que falta no bloquea las demás descargas
     .then((x) => { pLoading.delete(m); return x; });
   pLoading.set(m, p);
@@ -544,7 +554,7 @@ function startSession(review, clefs) {
   else playMode = S.mode;
   curKey = !reviewOn && isKeyMode(playMode) ? keyOf(playMode - 3, S.klv[playMode - 3]) : null;      // armadura de esta serie (nivel guardado)
   layout();
-  pianoPreload(pianoMidis(playMode, curKey));
+  { const need = pianoMidis(playMode, curKey);  setTimeout(() => pianoPreload(need), 350); }      // tras la animación de entrada, para no competir con ella
   plan = [];
   if (playMode === 2) {
     let c = rand(0, 1);
@@ -1055,37 +1065,58 @@ addEventListener("popstate", (e) => {
 });
 
 /* ---------- animación entre pantallas (entra una y sale otra) ---------- */
-let trans = null, snapC = null, newC = null, newX = null;
+let trans = null, snapC = null, dimEl = null, transAnims = [];
+// La animación la hace el navegador (transform/opacity en la GPU, sin repintar en cada fotograma): el lienzo principal ya lleva la pantalla nueva
+// y una "foto" de la pantalla que se va (otro lienzo) se desliza por encima o por debajo. JavaScript solo dibuja una vez.
 function ensureC() {
-  if (!snapC) { snapC = document.createElement("canvas"); newC = document.createElement("canvas"); newX = newC.getContext("2d"); }
-  if (snapC.width !== cv.width || snapC.height !== cv.height) { snapC.width = newC.width = cv.width; snapC.height = newC.height = cv.height; }
+  if (!snapC) {
+    snapC = document.createElement("canvas");  dimEl = document.createElement("div");
+    const st = "display:none;position:absolute;left:0;top:0;pointer-events:none;";
+    snapC.style.cssText = st;  dimEl.style.cssText = st + "width:100%;height:100%;background:#000;opacity:0;";
+    document.body.appendChild(snapC);  document.body.appendChild(dimEl);
+  }
+  if (snapC.width !== cv.width || snapC.height !== cv.height) { snapC.width = cv.width;  snapC.height = cv.height; }
+  snapC.style.width = cv.style.width;  snapC.style.height = cv.style.height;
 }
 function startTrans(dir) {
   try {
-    if (!cv.width || document.hidden || (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches)) return;
+    if (trans) endTrans();
+    if (!cv.width || document.hidden || !cv.animate || (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches)) return;
     ensureC();
     const g = snapC.getContext("2d");  g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, snapC.width, snapC.height);  g.drawImage(cv, 0, 0);   // foto de la pantalla que se va
-    trans = { dir, t0: performance.now(), dur: 170 };
+    trans = { dir, started: false, dur: 170 };
     dirty = true;
   } catch (e) { trans = null; }
 }
+function beginTrans() {                                  // se llama tras dibujar la pantalla nueva en el lienzo principal
+  trans.started = true;
+  try {
+    const fwd = trans.dir > 0, over = fwd ? cv : snapC, under = fwd ? snapC : cv, dimMax = AC.light ? 0.16 : 0.35;
+    const o = { duration: trans.dur, easing: "cubic-bezier(.215,.61,.355,1)", fill: "both" };
+    snapC.style.display = dimEl.style.display = "block";
+    under.style.zIndex = 1;  dimEl.style.zIndex = 2;  over.style.zIndex = 3;
+    over.style.boxShadow = AC.light ? "-3px 0 22px rgba(0,0,0,.22)" : "-3px 0 22px rgba(0,0,0,.45)";
+    transAnims = [
+      over.animate(fwd ? [{ transform: "translateX(100%)" }, { transform: "translateX(0)" }] : [{ transform: "translateX(0)" }, { transform: "translateX(100%)" }], o),
+      under.animate(fwd ? [{ transform: "translateX(0)" }, { transform: "translateX(-22%)" }] : [{ transform: "translateX(-22%)" }, { transform: "translateX(0)" }], o),
+      dimEl.animate(fwd ? [{ opacity: 0 }, { opacity: dimMax }] : [{ opacity: dimMax }, { opacity: 0 }], o)
+    ];
+    transAnims[0].onfinish = endTrans;
+    trans.timer = setTimeout(endTrans, trans.dur + 150);      // por si el navegador no avisa del final
+  } catch (e) { endTrans(); }
+}
+function endTrans() {
+  if (!trans) return;
+  clearTimeout(trans.timer);  trans = null;
+  for (const a of transAnims) { try { a.cancel(); } catch (e) {} }
+  transAnims = [];
+  try { snapC.style.display = dimEl.style.display = "none";  cv.style.zIndex = snapC.style.zIndex = dimEl.style.zIndex = "";  cv.style.boxShadow = snapC.style.boxShadow = ""; } catch (e) {}
+  dirty = true;
+}
 function drawFrame(t) {
-  if (!trans) { draw(t); return; }
-  const p = clamp((performance.now() - trans.t0) / trans.dur, 0, 1);
-  ensureC();
-  const main = ctx;
-  ctx = newX;
-  try { draw(t); } finally { ctx = main; }
-  const W = cv.width, H = cv.height, e = 1 - Math.pow(1 - p, 3), fwd = trans.dir > 0, k = fwd ? e : 1 - e;
-  const under = fwd ? snapC : newC, over = fwd ? newC : snapC;
-  const ux = -0.22 * W * k, ox = fwd ? W * (1 - e) : W * e, dpr = L.dpr || 1;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);  ctx.globalAlpha = 1;
-  ctx.drawImage(under, ux, 0);
-  ctx.fillStyle = "rgba(0,0,0," + ((AC.light ? 0.16 : 0.35) * k).toFixed(3) + ")";  ctx.fillRect(0, 0, W, H);
-  ctx.save();  ctx.shadowColor = AC.light ? "rgba(0,0,0,.26)" : "rgba(0,0,0,.5)";  ctx.shadowBlur = 22 * dpr;  ctx.shadowOffsetX = -3 * dpr;
-  ctx.drawImage(over, ox, 0);  ctx.restore();
-  if (p >= 1) { trans = null; dirty = true; }
+  draw(t);
+  if (trans && !trans.started) beginTrans();
 }
 
 let midiAccess = null, midiErr = "", midiLast = "", midiPending = false;
@@ -2697,10 +2728,10 @@ const hi = settingsOpen || scene !== "game" || L.kb ? -1 : wheelIndex(pointer);
 let hb = "";
 for (const b of buttons) if (hit(b, pointer)) { hb = b.id; break; }
 if (hi !== hoverIdx || hb !== hoverBtn) { hoverIdx = hi; hoverBtn = hb; dirty = true; }
-if (moving || dirty || trans) { drawFrame(t); dirty = false; }
+if (moving || dirty || (trans && !trans.started)) { drawFrame(t); dirty = false; }
 requestAnimationFrame(frame);
 }
-function onResize() { layout(); dirty = true; }
+function onResize() { if (trans) endTrans();  layout(); dirty = true; }
 addEventListener("resize", onResize);
 addEventListener("pageshow", () => { onResize(); });
 addEventListener("orientationchange", () => setTimeout(onResize, 120));
@@ -2733,6 +2764,7 @@ const boot = () => {
     const wait = Math.max(0, (okFont ? 900 : 2400) - (performance.now() - t0));      // el logo se ve al menos ~1 s
     setTimeout(() => {
       try { start(); } catch (e) { console.error(e); }
+      try { (window.requestIdleCallback || setTimeout)(() => { try { ensureC(); } catch (e) {} }, 1500); } catch (e) {}
       window.__rnReady = true;  try { sessionStorage.removeItem("rn_retry"); } catch (e) {}
       setP(1, "");
       if (sp) { sp.classList.add("off");  setTimeout(() => { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 450); }

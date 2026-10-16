@@ -1,8 +1,12 @@
-ReadNotes 1.5.18
+ReadNotes 1.5.19
 
 SUBIR: index.html, sw.js, manifest.webmanifest y la carpeta icons/ (sustituyen a los actuales). El resto no cambia.
 
 Novedades
+- Rendimiento al pasar de pantalla (sobre todo al pasar a jugar): la animación entre pantallas la hace ahora el navegador en la GPU (transform/opacity)
+  en vez de repintar la pantalla completa en cada fotograma (antes con shadowBlur a pantalla completa); el lienzo ya no se reasigna si el tamaño no cambia;
+  las capas de la animación se preparan al arrancar; la descarga del piano espera a que acabe la animación; las muestras se guardan recortadas a 3,5 s
+  (~60 % menos memoria). En una prueba con CPU 4x más lenta: bloqueo total de 1,4 s a 0,3 s.
 - Arreglo: la app ya no se queda colgada en la pantalla de inicio al reabrirla tras apagar el móvil.
   sw.js: la página de la red solo se usa si llega entera y con código 200; si no, se abre la copia guardada.
   index.html: si la app no ha arrancado en 15 s se recarga sola (máx. 2 veces) y la pantalla de carga se quita siempre.
