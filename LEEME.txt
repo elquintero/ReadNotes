@@ -1,8 +1,9 @@
-ReadNotes 1.5.20
+ReadNotes 1.5.21
 
 SUBIR: index.html, sw.js, manifest.webmanifest y la carpeta icons/ (sustituyen a los actuales). El resto no cambia.
 
 Novedades
+- Barra de progreso de la partida con el color de acento elegido en Ajustes.
 - Cabecera de la partida: el texto (Nota / Fallos / Precisión) va a la izquierda y la barra de progreso a la derecha, con un pequeño margen al borde.
 - Rendimiento al pasar de pantalla (sobre todo al pasar a jugar): la animación entre pantallas la hace ahora el navegador en la GPU (transform/opacity)
   en vez de repintar la pantalla completa en cada fotograma (antes con shadowBlur a pantalla completa); el lienzo ya no se reasigna si el tamaño no cambia;

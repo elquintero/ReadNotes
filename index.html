@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.20", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.21", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -1337,7 +1337,7 @@ text(t, xL, y, fs, AC.hdTxt, "left");
 const bx = xL + ctx.measureText(t).width + 10, bw = x1 - bx;
 if (bw > 20) {
 ctx.fillStyle = AC.hdTrack;  ctx.fillRect(bx, y - 4, bw, 8);
-ctx.fillStyle = AC.hdFill;  ctx.fillRect(bx, y - 4, bw * Math.min(okCount + 1, SN()) / SN(), 8);
+ctx.fillStyle = AC.accV;  ctx.fillRect(bx, y - 4, bw * Math.min(okCount + 1, SN()) / SN(), 8);      // el relleno usa el color de acento elegido
 }
 }
 const DOT_EDGE = 0.67, DOT_LIGHT = 0.25;            // borde de acento al 67 % de opacidad (33 % transparente) · acierto/fallo aclarados un 25 %
