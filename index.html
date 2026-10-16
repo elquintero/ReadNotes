@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.19", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.20", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -1332,12 +1332,12 @@ function drawHeaderDark() {
 const fs = clamp(L.fs * 0.92, 11, 16), y = L.top + L.barH + L.fs * 1.15;
 const tot = okCount + badCount, pct = tot ? Math.floor((100 * okCount) / tot) : 100;
 const t = `Nota: ${Math.min(okCount + 1, SN())}/${SN()} | Fallos: ${badCount} | Precisión: ${pct}%`;
-const x1 = L.cx0 + L.cw - L.m * 0.5;
-text(t, x1, y, fs, AC.hdTxt, "right");
-const bw = x1 - ctx.measureText(t).width - 10 - L.cx0;
+const xL = L.cx0 + L.m * 0.5, x1 = L.cx0 + L.cw - L.m;            // texto a la izquierda · la barra termina con un pequeño margen respecto al borde derecho
+text(t, xL, y, fs, AC.hdTxt, "left");
+const bx = xL + ctx.measureText(t).width + 10, bw = x1 - bx;
 if (bw > 20) {
-ctx.fillStyle = AC.hdTrack;  ctx.fillRect(L.cx0, y - 4, bw, 8);
-ctx.fillStyle = AC.hdFill;  ctx.fillRect(L.cx0, y - 4, bw * Math.min(okCount + 1, SN()) / SN(), 8);
+ctx.fillStyle = AC.hdTrack;  ctx.fillRect(bx, y - 4, bw, 8);
+ctx.fillStyle = AC.hdFill;  ctx.fillRect(bx, y - 4, bw * Math.min(okCount + 1, SN()) / SN(), 8);
 }
 }
 const DOT_EDGE = 0.67, DOT_LIGHT = 0.25;            // borde de acento al 67 % de opacidad (33 % transparente) · acierto/fallo aclarados un 25 %

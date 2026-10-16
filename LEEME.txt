@@ -1,8 +1,9 @@
-ReadNotes 1.5.19
+ReadNotes 1.5.20
 
 SUBIR: index.html, sw.js, manifest.webmanifest y la carpeta icons/ (sustituyen a los actuales). El resto no cambia.
 
 Novedades
+- Cabecera de la partida: el texto (Nota / Fallos / Precisión) va a la izquierda y la barra de progreso a la derecha, con un pequeño margen al borde.
 - Rendimiento al pasar de pantalla (sobre todo al pasar a jugar): la animación entre pantallas la hace ahora el navegador en la GPU (transform/opacity)
   en vez de repintar la pantalla completa en cada fotograma (antes con shadowBlur a pantalla completa); el lienzo ya no se reasigna si el tamaño no cambia;
   las capas de la animación se preparan al arrancar; la descarga del piano espera a que acabe la animación; las muestras se guardan recortadas a 3,5 s
