@@ -203,6 +203,13 @@
       "categoria": "clasica"
     },
     {
+      "id": "balladen1op23",
+      "titulo": "Ballade No.1, Op. 23",
+      "autor": "Fréderic Chopin",
+      "archivo": "balladen1op23.mxl",
+      "categoria": "clasica"
+    },
+    {
       "id": "cantatabwv147",
       "titulo": "Cantata BWV 147",
       "autor": "Bach",
