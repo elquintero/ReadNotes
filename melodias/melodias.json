@@ -196,6 +196,13 @@
       "categoria": "clasica"
     },  
     {
+      "id": "Concerton1op23tchaikovsky",
+      "titulo": "Piano Concerto No.1, Op.23",
+      "autor": "Ilich Chaikovski",
+      "archivo": "Concerton1op23tchaikovsky.mxl",
+      "categoria": "clasica"
+    },
+    {
       "id": "cantatabwv147",
       "titulo": "Cantata BWV 147",
       "autor": "Bach",
