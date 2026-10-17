@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.24", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.25", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías", "Contrarreloj"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -156,6 +156,7 @@ function applyAccent() {
 const S = {
 mode: 0,
 nlv: [0, 0],
+nmax: [0, 0],
 visible: 6,
 es: true,
 lang: "es",
@@ -180,6 +181,7 @@ S.mode   = clamp(int(raw.mode, 0), 0, 4);
   const hadOld = raw.lg !== undefined || raw.lf !== undefined || raw.above !== undefined;
   const mig = (v) => { const n = clamp(int(v !== undefined ? v : raw.above, 1), 0, 4); return n === 0 ? STAFF_LV : STAFF_LV + 2 * n; };
   S.nlv = [0, 1].map((i) => (Array.isArray(raw.nlv) ? clamp(int(raw.nlv[i], 0), 0, NLV - 1) : hadOld ? mig(i ? raw.lf : raw.lg) : 0));
+  S.nmax = [0, 1].map((i) => Math.max(S.nlv[i], Array.isArray(raw.nmax) ? clamp(int(raw.nmax[i], 0), 0, NLV - 1) : 0));      // niveles por encima del máximo están bloqueados
 }
 S.nsize = clamp(int(raw.nsize, 1), 0, 3);                  // tamaño de las notas: 0 pequeño · 1 normal · 2 grande · 3 muy grande
 S.lang   = raw.lang === "en" ? "en" : raw.lang === "es" ? "es" : (/^en/i.test(navigator.language || "") ? "en" : "es");   // primera vez: idioma del dispositivo
@@ -203,7 +205,9 @@ S.rec    = Math.max(0, int(raw.rec, 0));
 } catch (e) {  }
 applyAccent();  applyLang();
 }
+let wiping = false, wipeArm = 0;
 function saveSettings() {
+if (wiping) return;
 try { localStorage.setItem("mrt", JSON.stringify(S)); } catch (e) { storeFail(); }
 }
 /* ---------- IDIOMA: español (base) · inglés. Todo el texto de la interfaz está escrito en español y se traduce al dibujarlo ---------- */
@@ -262,7 +266,7 @@ const EN_FRAG = [
 ["Repaso: ","Review: "],[" notas a reforzar"," notes to reinforce"],[" notas al día"," notes a day"],[" · se guarda un archivo .json"," · saves a .json file"],
 [" sesiones importadas"," sessions imported"],[" sesión importada"," session imported"],[" ya estaban)"," already there)"],
 ["Sube con ","Pass with "],[" % de precisión para subir de nivel","% accuracy to level up"],["Necesitas un ","You need "],[" % de precisión","% accuracy"],
-["¡Nivel superado! Subes al nivel ","Level passed! Moving up to level "],["Nivel ","Level "],["Rango: ","Range: "],["Registro agudo","High register"],["Registro grave","Low register"],
+["¡Nivel superado! Subes al nivel ","Level passed! Moving up to level "],["Nivel ","Level "],["Rango: ","Range: "],["Supera el nivel ","Pass level "],[" para desbloquearlo"," to unlock it"],[" con un "," with "],["Se borrarán estadísticas, niveles y ajustes","Statistics, levels and settings will be deleted"],["¿Seguro? Toca de nuevo para borrar","Sure? Tap again to delete"],["Borrar todos los datos","Delete all data"],["Estadísticas, niveles desbloqueados y ajustes","Statistics, unlocked levels and settings"],["Registro agudo","High register"],["Registro grave","Low register"],
 [" vs. sesión anterior"," vs. previous session"],[" vs anterior"," vs previous"],["= igual que la sesión anterior","= same as previous session"],["= igual que la anterior","= same as previous"],
 [" s/nota"," s/note"],["Clave de sol","Treble clef"],["Clave de fa","Bass clef"],[" sesiones"," sessions"],[" sesión"," session"],[" días"," days"],[" día"," day"],[" fallos"," mistakes"],[" fallo"," mistake"],[" notas"," notes"],[" nota"," note"],
 ["Te faltan ","Still need "],["Repasar mis fallos · ","Review my mistakes · "],["Contrarreloj","Time attack"],
@@ -712,6 +716,7 @@ function loadSessions() {
   } catch (e) { sessions = []; }
 }
 function saveSessions() {
+  if (wiping) return;
   if (sessions.length > 400) sessions = sessions.slice(-400);
   try { localStorage.setItem("mrt_sessions", JSON.stringify(sessions)); }
   catch (e) {
@@ -770,7 +775,7 @@ function finishSession() {
       if (A.n < 5) continue;
       const pass = A.acc >= KEY_PASS, last = lv >= NLV - 1;
       sum.nl.push({ c, lv, pass, last, to: pass && !last ? lv + 1 : lv });
-      if (pass && !last) S.nlv[c] = lv + 1;
+      if (pass && !last) { S.nlv[c] = lv + 1;  S.nmax[c] = Math.max(S.nmax[c], lv + 1); }
     }
     if (sum.nl.some((q) => q.to !== q.lv)) saveSettings();
   }
@@ -849,9 +854,10 @@ function act0(id) {
   if (id.startsWith("cat_")) { const c = melCats[int(id.slice(4), -1)];  if (c) { melCat = c.id;  scrollY = 0;  dirty = true; }  return; }
   if (id.startsWith("mode_")) { timed = false;  S.mode = clamp(int(id.slice(5), 0), 0, 4); saveSettings(); startSession(false); return; }
   if (id.startsWith("tf_")) { ST.clef = int(id.slice(3), -1); computeStats(); dirty = true; return; }
-  if (id.startsWith("nl_")) { const p = id.split("_"), c = clamp(int(p[1], 0), 0, 1), lv = clamp(int(p[2], 0), 0, NLV - 1); S.nlv[c] = lv; saveSettings(); layout(); pianoPreload(pianoMidis(S.mode, isKeyMode(S.mode) ? keyOf(S.mode - 3, S.klv[S.mode - 3]) : null)); dirty = true; return; }
+  if (id.startsWith("nl_")) { const p = id.split("_"), c = clamp(int(p[1], 0), 0, 1), lv = clamp(int(p[2], 0), 0, S.nmax[c]); S.nlv[c] = lv; saveSettings(); layout(); pianoPreload(pianoMidis(S.mode, isKeyMode(S.mode) ? keyOf(S.mode - 3, S.klv[S.mode - 3]) : null)); dirty = true; return; }
   if (id.startsWith("acc_")) { S.accent = clamp(int(id.slice(4), 0), 0, ACCENTS.length - 1); applyAccent(); saveSettings(); dirty = true; return; }
   if (id.startsWith("lnt_")) { const c = clamp(int(id.slice(4), 0), 0, 3); lnOpen[c] = !lnOpen[c]; dirty = true; return; }
+  if (id.startsWith("nlk_")) { const p = id.split("_"), lv = int(p[2], 1); showToast("Supera el nivel " + lv + " con un " + Math.round(KEY_PASS * 100) + " % de precisión para desbloquearlo", 2800); return; }
   if (id.startsWith("kl_")) { const p = id.split("_"), c = clamp(int(p[1], 0), 0, 1), lv = clamp(int(p[2], 0), 0, KEY_LEVELS.length - 1); S.klv[c] = lv; saveSettings(); pianoPreload(pianoMidis(3 + c, keyOf(c, lv))); dirty = true; return; }
   if (id.startsWith("tp_")) { ST.period = int(id.slice(3), 0); computeStats(); dirty = true; return; }
   switch (id) {
@@ -872,6 +878,13 @@ function act0(id) {
     case "install": case "bk_exp": case "bk_imp": return;   // se lanza en el evento click (gesto del usuario)
     case "s_again": if (timed) { startSession(false); return; }  go(playMode === 5 && mel ? "melodies" : "clefs"); return;
     case "t_chart": ST.metric = (ST.metric + 1) % 3; dirty = true; return;
+    case "wipe_all":
+      if (wipeArm > performance.now()) {
+        wiping = true;
+        try { localStorage.removeItem("mrt");  localStorage.removeItem("mrt_sessions"); } catch (e) {}
+        location.reload();
+      } else { wipeArm = performance.now() + 3500;  setTimeout(() => { dirty = true; }, 3600); }
+      dirty = true; return;
     case "t_clear":
       if (ST.confirm > performance.now()) { sessions = []; saveSessions(); ST.confirm = 0; computeStats(); }
       else ST.confirm = performance.now() + 3000;
@@ -994,6 +1007,10 @@ if (updReady) rows.push({ k: "tap", label: "Nueva versión disponible", value: "
 rows.push({ k: "hd", label: "Copia de seguridad" });
 rows.push({ k: "tap", label: "Exportar estadísticas", value: sessions.length + (sessions.length === 1 ? " sesión" : " sesiones") + " · se guarda un archivo .json", id: "bk_exp" });
 rows.push({ k: "tap", label: "Importar estadísticas", value: bkMsg || "Suma las de un archivo .json a las actuales", id: "bk_imp" });
+{
+  const armed = wipeArm > performance.now();
+  rows.push({ k: "tap", label: armed ? "¿Seguro? Toca de nuevo para borrar" : "Borrar todos los datos", value: armed ? "Se borrarán estadísticas, niveles y ajustes" : "Estadísticas, niveles desbloqueados y ajustes", id: "wipe_all" });
+}
 rows.push({ k: "hd", label: "Créditos" });
 rows.push({ k: "note", tight: true, small: true, label: "Diseño y Desarrollado por:  J.L Quintero" });
 rows.push({ k: "note", tight: true, label: "Piano: tonejs-instruments (N. Brosowsky), CC BY 3.0" });
@@ -2520,6 +2537,14 @@ function lnBadge(pi, x, y, w) {
   ctx.strokeStyle = col;  ctx.lineWidth = 2;  ctx.beginPath();  ctx.arc(bx, by, r, 0, Math.PI * 2);  ctx.stroke();
   text(String(n), bx, by + 0.5, n > 9 ? 14 : 16, t > 0.5 ? (lum(col) > 0.42 ? "#161616" : "#ffffff") : AC.chipOn, "center", "bold");
 }
+function lockIcon(cx, cy, s, col) {
+  const w = s * 0.86, h = s * 0.6, x = cx - w / 2, y = cy - h / 2 + s * 0.14;
+  ctx.save();  ctx.strokeStyle = col;  ctx.fillStyle = col;  ctx.lineWidth = Math.max(1.6, s * 0.11);  ctx.lineCap = "round";
+  ctx.beginPath();  ctx.arc(cx, y, w * 0.3, Math.PI, 0);  ctx.stroke();
+  rr(x, y, w, h, s * 0.12);  ctx.fill();
+  ctx.fillStyle = AC.inset;  ctx.beginPath();  ctx.arc(cx, y + h * 0.42, s * 0.06, 0, Math.PI * 2);  ctx.fill();
+  ctx.restore();
+}
 // panel de niveles de notas (sol / fa): mini pentagrama con lo desbloqueado + tira de 18 niveles; PH = alto completo, ph = alto visible durante la animación
 const CLEF_SH = 92, CLEF_PH = 34 + CLEF_SH + 24 + 3 * 44 + 8;
 function lnPanel(c, x, y, w, PH, ph, top) {
@@ -2562,11 +2587,13 @@ function lnPanel(c, x, y, w, PH, ph, top) {
   const gp = 6, bw = (iw - 5 * gp) / 6, bh = 38, by0 = sy0 + CLEF_SH + 24;
   for (let lv = 0; lv < NLV; lv++) {
     const r = Math.floor(lv / 6), k = lv % 6, bx = ix + k * (bw + gp), by = by0 + r * (bh + 6), on = val === lv, id = "nl_" + c + "_" + lv;
-    ctx.fillStyle = on ? (c ? rgbaHex(AC.fa, 0.22) : accA(AC.chipOnA)) : hoverBtn === id ? AC.chipH : AC.chip;
+    const lock = lv > S.nmax[c];
+    ctx.fillStyle = on ? (c ? rgbaHex(AC.fa, 0.22) : accA(AC.chipOnA)) : hoverBtn === id && !lock ? AC.chipH : AC.chip;
     rr(bx, by, bw, bh, 10);  ctx.fill();
     ctx.strokeStyle = on ? col : AC.chipEdge;  ctx.lineWidth = on ? 1.6 : 1;  ctx.stroke();
-    text(String(lv + 1), bx + bw / 2, by + bh / 2, 17, on ? (c ? col : AC.chipOn) : lv < val ? colT : AC.chipTxt, "center", on ? "bold" : "");
-    if (live) visHit(id, bx, by, bw, bh, top);
+    if (lock) lockIcon(bx + bw / 2, by + bh / 2, 17, AC.dim);
+    else text(String(lv + 1), bx + bw / 2, by + bh / 2, 17, on ? (c ? col : AC.chipOn) : lv < val ? colT : AC.chipTxt, "center", on ? "bold" : "");
+    if (live) visHit(lock ? "nlk_" + c + "_" + lv : id, bx, by, bw, bh, top);
   }
   ctx.restore();
 }
