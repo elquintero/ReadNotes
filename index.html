@@ -65,8 +65,8 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.21", SESSION_N = 32, CLEF_GAP = 0.55;
-const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías"];
+const APP_NAME = "ReadNotes", APP_VER = "1.5.23", SESSION_N = 32, CLEF_GAP = 0.55;
+const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías", "Contrarreloj"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
   cyan: "#2ed3e6", acc: "#2a6f86", accV: "#2a6f86", accT: "#62b0c9", accH: "#3a87a1", accBg: "#1d3b46", accP: "#2a6f86", onAcc: "#ffffff", onBar: "#eaf6f9", fa: "#ffb454", amber: "#ffb454", fail: "#b45a5a", ok: "#4ade80", mid: "#f5c542", bad: "#ff6b6b", bar: "#2a6f86"
@@ -159,6 +159,8 @@ lg: 1,
 lf: 1,
 visible: 6,
 es: true,
+lang: "es",
+trBest: 0,
 sound: true,
 piano: true,
 vol: 7,
@@ -178,7 +180,9 @@ S.mode   = clamp(int(raw.mode, 0), 0, 4);
 S.lg = clamp(int(raw.lg !== undefined ? raw.lg : raw.above, 1), 0, 4);
 S.lf = clamp(int(raw.lf !== undefined ? raw.lf : raw.above, 1), 0, 4);
 S.nsize = clamp(int(raw.nsize, 1), 0, 3);                  // tamaño de las notas: 0 pequeño · 1 normal · 2 grande · 3 muy grande
-S.es     = raw.es !== false;
+S.lang   = raw.lang === "en" ? "en" : raw.lang === "es" ? "es" : (/^en/i.test(navigator.language || "") ? "en" : "es");   // primera vez: idioma del dispositivo
+S.es     = raw.es !== undefined ? raw.es !== false : S.lang !== "en";        // nombres de notas: latín en español · anglosajón en inglés (se puede cambiar aparte)
+S.trBest = Math.max(0, int(raw.trBest, 0));
 S.sound  = raw.sound !== false;
 S.piano  = raw.piano !== false;
 S.vol    = clamp(int(raw.vol, 7), 0, 10);
@@ -195,10 +199,98 @@ S.midi = raw.midi === true;
 S.adapt = raw.adapt !== false;
 S.rec    = Math.max(0, int(raw.rec, 0));
 } catch (e) {  }
-applyAccent();
+applyAccent();  applyLang();
 }
 function saveSettings() {
-try { localStorage.setItem("mrt", JSON.stringify(S)); } catch (e) {}
+try { localStorage.setItem("mrt", JSON.stringify(S)); } catch (e) { storeFail(); }
+}
+/* ---------- IDIOMA: español (base) · inglés. Todo el texto de la interfaz está escrito en español y se traduce al dibujarlo ---------- */
+const EN_EXACT = {"Ajustes":"Settings","aciertos seguidos":"correct in a row",
+"Clave de sol":"Treble clef","Clave de fa":"Bass clef","Claves mezcladas":"Mixed clefs","Armaduras clave de sol":"Key signatures – treble","Armaduras clave de fa":"Key signatures – bass","Melodías":"Melodies","Contrarreloj":"Time attack",
+"Azul acero":"Steel blue","Turquesa":"Turquoise","Frambuesa":"Raspberry","Verde":"Green","Rosa":"Pink","Negro":"Black",
+"Pequeño":"Small","Normal":"Normal","Grande":"Large","Muy grande":"Extra large","Sintetizador":"Synthesizer",
+"No se pudo guardar (almacenamiento lleno). Exporta tus estadísticas":"Couldn't save (storage full). Export your statistics",
+"Almacenamiento casi lleno: solo se guardan 200 sesiones":"Storage almost full: only 200 sessions are kept",
+"Toca de nuevo para reiniciar (perderás el progreso)":"Tap again to restart (you'll lose your progress)",
+"Perderás la partida: toca de nuevo para actualizar":"You'll lose this game: tap again to update",
+"El tiempo empieza con tu primera nota":"Time starts with your first note",
+"Notas para repasar":"Notes to review","Notas más lentas":"Slowest notes",
+"Nombre de las notas":"Note names","Latín (Do, Re, Mi, …)":"Latin (Do, Re, Mi, …)","Anglosajón (C, D, E, …)":"English (C, D, E, …)",
+"Sonido":"Sound","Habilitado":"Enabled","Deshabilitado":"Disabled","Volumen":"Volume","Piano real":"Real piano","Vibraciones":"Vibration",
+"Mantener notas en melodías":"Hold notes in melodies","Mantén cada nota lo que dura":"Hold each note for its length","Un toque basta para avanzar":"A tap is enough to advance",
+"No disponible en este navegador (usa Chrome o Edge)":"Not available in this browser (use Chrome or Edge)","Teclado MIDI":"MIDI keyboard",
+"Práctica adaptativa":"Adaptive practice","Más práctica en tus notas débiles":"More practice on your weak notes","Notas totalmente al azar":"Fully random notes",
+"Micrófono":"Microphone","Escucha la nota que cantas o tocas durante la partida":"Listens to the note you sing or play during the game","Responde con la voz o un instrumento":"Answer with your voice or an instrument",
+"Verificación de octavas":"Octave check","Se comprueba la octava exacta de la nota":"The exact octave of the note is checked","Las notas introducidas pueden estar en cualquier octava":"Entered notes can be in any octave",
+"Objetivo diario":"Daily goal","Desactivado":"Off","Apariencia":"Appearance","Tema de la aplicación":"App theme","Oscuro":"Dark","Claro":"Light","Color de Acento":"Accent color",
+"Disposición de las notas":"Note layout","Teclado virtual (por defecto)":"On-screen keyboard (default)","Círculo de notas":"Note circle","Disposición de las notas (apaisado)":"Note layout (landscape)",
+"Tamaño de las notas":"Note size","Pantalla completa":"Fullscreen","Activada":"On","Desactivada":"Off","iPhone: Compartir › Añadir a pantalla de inicio":"iPhone: Share › Add to Home Screen",
+"Aplicación":"App","Instalar app":"Install app","Ya está instalada en este dispositivo":"Already installed on this device","Añádela a tu pantalla de inicio o escritorio":"Add it to your home screen or desktop",
+"Safari: Compartir › Añadir a pantalla de inicio":"Safari: Share › Add to Home Screen","Menú del navegador › Instalar aplicación":"Browser menu › Install app",
+"Nueva versión disponible":"New version available","Toca para actualizar ahora":"Tap to update now","Actualizar":"Update",
+"Copia de seguridad":"Backup","Exportar estadísticas":"Export statistics","Importar estadísticas":"Import statistics","Suma las de un archivo .json a las actuales":"Adds those from a .json file to the current ones",
+"Créditos":"Credits","Diseño y Desarrollado por:  J.L Quintero":"Designed and developed by:  J.L Quintero",
+"Clásica":"Classical","Música clásica o relacionada con la misma.":"Classical or related music.","Infantil":"Children's","Canciones sencillas para empezar.":"Simple songs to get started.",
+"Navidad":"Christmas","Villancicos y canciones de fiesta.":"Carols and festive songs.","Ejercicios":"Exercises","Escalas y arpegios para practicar.":"Scales and arpeggios to practice.",
+"Tradicional":"Traditional","Melodías populares de siempre.":"Timeless popular melodies.","Otras melodías":"Other melodies",
+"No se pudo cargar la lista de melodías. Comprueba la conexión.":"Couldn't load the melody list. Check your connection.",
+"Mantén pulsada cada nota lo que dura":"Hold each note for its length","Toca las notas de la canción":"Play the notes of the song","Mantén la nota pulsada más tiempo":"Hold the note longer",
+"Cargando melodías…":"Loading melodies…","Reintentar":"Retry","La lista está vacía: añade canciones a melodias/melodias.json":"The list is empty: add songs to melodias/melodias.json",
+"Elige una categoría":"Choose a category","Elige una canción para tocarla":"Choose a song to play","Cargando partitura…":"Loading score…",
+"Permiso denegado: actívalo en los ajustes del navegador":"Permission denied: enable it in your browser settings","No se pudo acceder al micrófono":"Couldn't access the microphone","Escuchando…":"Listening…",
+"El archivo no es una copia válida de ReadNotes":"This file isn't a valid ReadNotes backup",
+"Jugar":"Play","Estadísticas":"Statistics",
+"Registro agudo":"High register","Registro grave":"Low register","Intercaladas al azar":"Interleaved at random","Toca canciones: mantén cada nota":"Play songs: hold each note",
+"Líneas adicionales":"Ledger lines","Tipo de lectura":"Reading type","ARMADURAS":"KEY SIGNATURES","MELODÍAS":"MELODIES","DESAFÍO":"CHALLENGE","Usa las líneas adicionales de sol y de fa.":"Uses the ledger lines of treble and bass.",
+"Sesión completada":"Session complete","Repaso de fallos":"Mistake review","precisión":"accuracy","Primera sesión de esta modalidad":"First session of this mode","¡Nivel máximo superado!":"Top level passed!",
+"Tiempo total":"Total time","Notas por segundo":"Notes per second","Tiempo por nota":"Time per note","Fallos":"Mistakes","¡Sin fallos!":"No mistakes!","Mejor racha":"Best streak","Puntos":"Points",
+"POR CLAVE":"BY CLEF","Repasar mis fallos":"Review my mistakes","Nueva sesión":"New session","Menú principal":"Main menu",
+"¿Seguro?":"Sure?","Borrar":"Delete","Racha actual":"Current streak","¡Hoy ya has practicado!":"You've practiced today!","Practica hoy para mantenerla":"Practice today to keep it","Practica hoy para empezar":"Practice today to start",
+"Objetivo de hoy":"Today's goal","¡Objetivo cumplido!":"Goal reached!","Define un objetivo diario en Ajustes":"Set a daily goal in Settings",
+"Clave":"Clef","Todas":"All","Periodo":"Period","7 días":"7 days","30 días":"30 days","Todo":"All","Aún no hay datos":"No data yet","Completa una sesión para ver aquí tu progreso":"Complete a session to see your progress here",
+"Sesiones":"Sessions","Notas leídas":"Notes read","Precisión":"Accuracy","Tiempo jugado":"Time played","PRECISIÓN":"ACCURACY","NOTAS POR SEGUNDO":"NOTES PER SECOND","NOTAS PRACTICADAS":"NOTES PRACTICED",
+"Pulsa en el gráfico para alternar entre estadísticas":"Tap the chart to switch between statistics","NOTAS MÁS LENTAS":"SLOWEST NOTES","NOTAS MÁS DIFÍCILES":"HARDEST NOTES",
+"Nota":"Note","Veces":"Times","Tiempo":"Time","Acierto":"Correct","Repasar fallos":"Review mistakes",
+"Descargando fuentes…":"Downloading fonts…","Preparando…":"Getting ready…","No se encontró fonts/Bravura.otf: se usa una fuente de reserva":"fonts/Bravura.otf not found: using a fallback font",
+"Cargando…":"Loading…"
+};
+const EN_FRAG = [
+["Habilitado · sin teclado conectado","Enabled · no keyboard connected"],["Habilitado · conectado (","Enabled · connected ("],["Habilitado · ","Enabled · "],[" · última nota: "," · last note: "],
+[" · faltan archivos en Sound"," · files missing in Sound"],[" semitonos en Sound"," semitones in Sound"],[" · faltan "," · missing "],["Bajados ","Downloaded "],
+["Repaso: ","Review: "],[" notas a reforzar"," notes to reinforce"],[" notas al día"," notes a day"],[" · se guarda un archivo .json"," · saves a .json file"],
+[" sesiones importadas"," sessions imported"],[" sesión importada"," session imported"],[" ya estaban)"," already there)"],
+["Sube con ","Pass with "],[" % de precisión para subir de nivel","% accuracy to level up"],["Necesitas un ","You need "],[" % de precisión","% accuracy"],
+["¡Nivel superado! Subes al nivel ","Level passed! Moving up to level "],["Nivel ","Level "],["Rango: ","Range: "],
+[" vs. sesión anterior"," vs. previous session"],[" vs anterior"," vs previous"],["= igual que la sesión anterior","= same as previous session"],["= igual que la anterior","= same as previous"],
+[" s/nota"," s/note"],["Clave de sol","Treble clef"],["Clave de fa","Bass clef"],[" sesiones"," sessions"],[" sesión"," session"],[" días"," days"],[" día"," day"],[" fallos"," mistakes"],[" fallo"," mistake"],[" notas"," notes"],[" nota"," note"],
+["Te faltan ","Still need "],["Repasar mis fallos · ","Review my mistakes · "],["Contrarreloj","Time attack"],
+["¡Nuevo récord! ","New record! "],["Récord: ","Best: "],[" pts · esta vez "," pts · this time "],["Sin récord todavía","No record yet"],
+["No se pudo abrir «","Couldn't open «"],["no es un .mxl válido","not a valid .mxl"],["compresión no admitida","unsupported compression"],["fichero MusicXML no válido","invalid MusicXML file"],
+["solo se admite MusicXML «partwise»","only «partwise» MusicXML is supported"],["no se encontró ninguna voz en clave de sol","no treble-clef part found"],
+["permiso denegado (actívalo en los ajustes del navegador)","permission denied (enable it in the browser settings)"],["no se pudo acceder","could not access"],
+["Versión ","Version "],["Tiempo: ","Time: "]
+].sort((a, b) => b[0].length - a[0].length);
+const EN_UP = {};
+for (const k in EN_EXACT) EN_UP[k.toUpperCase()] = EN_EXACT[k].toUpperCase();
+const ti = (es, en) => (S.lang === "en" ? en : es);
+function tr(s) {
+  if (S.lang !== "en" || !s) return s;
+  const e = EN_EXACT[s] || EN_UP[s];
+  if (e) return e;
+  let o = s;
+  for (const f of EN_FRAG) if (o.indexOf(f[0]) >= 0) o = o.split(f[0]).join(f[1]);
+  o = o.replace(/(mistakes?) de (\d+)/g, "$1 of $2");
+  o = o.replace(/\b1 (notes|sessions|days|mistakes)\b/g, (m, w) => "1 " + w.slice(0, -1));
+  return o;
+}
+function applyLang() { try { document.documentElement.lang = S.lang; } catch (e) {} }
+
+// aviso flotante genérico (se dibuja encima de cualquier pantalla)
+let toastMsg = "", toastEnd = 0, toastBad = false, storeWarned = false;
+function showToast(m, ms, bad) { toastMsg = m; toastEnd = performance.now() + (ms || 2500); toastBad = !!bad; dirty = true; }
+function storeFail() {
+  if (storeWarned) return;  storeWarned = true;
+  showToast("No se pudo guardar (almacenamiento lleno). Exporta tus estadísticas", 6000, true);
 }
 const bottomStep = (c) => (c === 1 ? BOTTOM_FA : BOTTOM_SOL);
 const linesOf    = (c) => (c === 1 ? S.lf : S.lg);
@@ -458,6 +550,9 @@ let flashIdx = -1, flashT = 0, flashOk = true;
 let msg = "", msgT = 0, msgOk = true;
 /* ---------- práctica adaptativa y repaso de fallos ---------- */
 const WEAK_W = 1.8;
+const TIMED_MS = 60000, TIMED_PEN = 2000, TIMED_N = 400;      // contrarreloj: 60 s · cada fallo resta 2 s · notas de sobra para que no se acaben
+let timed = false, tRun = false, tEnd = 0, tUp = false;       // tRun: el reloj empieza con la primera nota acertada
+const tLeft = () => (!tRun ? TIMED_MS : Math.max(0, tEnd - (pauseStart !== null ? pauseStart : performance.now())));
 let playMode = 0, reviewOn = false, reviewClefs = [0, 1], reviewPool = [], wmap = new Map();
 const clefsOf = (m) => (m === 2 ? [0, 1] : m === 3 || m === 5 ? [0] : m === 4 ? [1] : [m]);
 /* ---------- ARMADURAS (modos 3 y 4): ejercicio de dificultad progresiva ---------- */
@@ -545,13 +640,13 @@ function makeNote(prev) {
 // startSession(false) = normal · startSession(true, claves) = repaso · startSession() = repetir el modo actual
 function startSession(review, clefs) {
   if (review === undefined && playMode === 5 && mel) { startMelody(mel); return; }
-  if (review === true) { reviewOn = true; reviewClefs = clefs && clefs.length ? clefs : [0, 1]; }
+  if (review === true) { timed = false;  reviewOn = true; reviewClefs = clefs && clefs.length ? clefs : [0, 1]; }
   else if (review === false) reviewOn = false;
   wmap = noteWeights();
   reviewPool = reviewOn ? reviewInfo(reviewClefs).pool : [];
   if (reviewOn && !reviewPool.length) reviewOn = false;
   if (reviewOn) { const pc = [0, 1].filter((c) => reviewPool.some((p) => p.clef === c)); playMode = pc.length === 2 ? 2 : pc[0]; }
-  else playMode = S.mode;
+  else playMode = timed ? 2 : S.mode;
   curKey = !reviewOn && isKeyMode(playMode) ? keyOf(playMode - 3, S.klv[playMode - 3]) : null;      // armadura de esta serie (nivel guardado)
   layout();
   { const need = pianoMidis(playMode, curKey);  setTimeout(() => pianoPreload(need), 350); }      // tras la animación de entrada, para no competir con ella
@@ -569,7 +664,7 @@ function startSession(review, clefs) {
   }
   generated = 0; notes = []; lastKey = -999;
   score = streak = okCount = badCount = bestStreak = 0;
-  results = []; msg = ""; msgT = 0; curBad = 0;
+  results = []; msg = ""; msgT = 0; curBad = 0;  tRun = false;  tUp = false;  tEnd = 0;
   let prev = null;
   for (let i = 0; i < Math.min(PENDING, SN()); i++) { const n = makeNote(prev); notes.push(n); prev = n; }
   lastClef = plan[0];
@@ -578,11 +673,12 @@ function startSession(review, clefs) {
   kbOct = clefsOf(playMode).length === 1 && clefsOf(playMode)[0] === 1 ? 2 : 4;
   go("game");
   if (reviewOn) { msg = "Repaso: " + reviewPool.length + " notas a reforzar"; msgOk = true; msgT = 3; }
+  if (timed) { msg = "El tiempo empieza con tu primera nota"; msgOk = true; msgT = 3.5; }
   if (curKey) { msg = "Nivel " + (curKey.lv + 1) + "/" + KEY_LEVELS.length + " · " + keyName(curKey.lv) + " (" + keySym(curKey.lv) + ")"; msgOk = true; msgT = 3.5; }
 }
 function pauseBegin() { if (pauseStart === null) pauseStart = performance.now(); }
 function pauseEnd() {
-  if (pauseStart !== null) { curShownAt += performance.now() - pauseStart; pauseStart = null; }
+  if (pauseStart !== null) { const d = performance.now() - pauseStart; curShownAt += d; if (tRun) tEnd += d; pauseStart = null; }
 }
 let savedScroll = 0;
 function setSettings(v) {
@@ -605,7 +701,11 @@ function loadSessions() {
 }
 function saveSessions() {
   if (sessions.length > 400) sessions = sessions.slice(-400);
-  try { localStorage.setItem("mrt_sessions", JSON.stringify(sessions)); } catch (e) {}
+  try { localStorage.setItem("mrt_sessions", JSON.stringify(sessions)); }
+  catch (e) {
+    try { localStorage.setItem("mrt_sessions", JSON.stringify(sessions.slice(-200))); showToast("Almacenamiento casi lleno: solo se guardan 200 sesiones", 5000, true); }
+    catch (e2) { storeFail(); }
+  }
 }
 // agrega una lista de [clave, paso, fallos, ms]
 function aggOf(list) {
@@ -629,11 +729,12 @@ function reviewList(list) {
 function finishSession() {
   if (scene !== "game") return;
   const rec = { t: Date.now(), m: playMode, s: score, r: bestStreak, n: results.slice() };
+  if (timed) rec.tm = 1;
   if (reviewOn) rec.rv = 1;
   if (playMode === 5 && mel) { rec.mt = mel.title;  rec.mid = mel.id; }
   if (curKey) rec.k = curKey.lv;
   let prev = null;
-  for (let i = sessions.length - 1; i >= 0; i--) if (sessions[i].m === rec.m && !!sessions[i].rv === !!rec.rv && sessions[i].mid === rec.mid) { prev = sessions[i]; break; }
+  for (let i = sessions.length - 1; i >= 0; i--) if (sessions[i].m === rec.m && !!sessions[i].tm === !!rec.tm && !!sessions[i].rv === !!rec.rv && sessions[i].mid === rec.mid) { prev = sessions[i]; break; }
   sessions.push(rec);
   saveSessions();
   sum = {
@@ -641,6 +742,11 @@ function finishSession() {
     byClef: [aggOf(rec.n.filter((e) => e[0] === 0)), aggOf(rec.n.filter((e) => e[0] === 1))],
     review: reviewList(rec.n), rvN: reviewInfo(clefsOf(rec.m)).nWeak
   };
+  if (timed) {                                       // contrarreloj: récord local de puntos
+    const prevBest = S.trBest, isRec = score > prevBest;
+    if (isRec) { S.trBest = score;  saveSettings(); }
+    sum.tm = { score, prevBest, isRec };
+  }
   if (curKey) {                                      // armaduras: con KEY_PASS de precisión se sube al siguiente nivel
     const c = playMode - 3, lv = curKey.lv, pass = sum.all.acc >= KEY_PASS, last = lv >= KEY_LEVELS.length - 1;
     sum.lv = { lv, pass, last, to: pass && !last ? lv + 1 : lv };
@@ -654,6 +760,7 @@ const currentNote = () => notes.find((n) => n.state === 0) || null;
 const nameOf = (i) => (S.es ? NAMES_ES[i] : NAMES_EN[i]);
 function submit(idx, kb) {
   if (scene !== "game" || settingsOpen) return;
+  if (timed && tUp) return;
   if (playMode === 5 && mel && !melDone) { melPress(idx, kb); return; }
   const c = currentNote();
   if (!c) return;
@@ -663,6 +770,7 @@ function submit(idx, kb) {
   const ok = kb ? kbOk(c, kb) : mod(c.step, 7) === lt && ((c.acc || 0) !== 0 ? ring === 1 : ring === 0);
   flashIdx = idx;  flashKey = kb ? kb.midi : -1;  flashT = 0.35;  flashOk = ok;
   if (ok) {
+    if (timed && !tRun) { tRun = true;  tEnd = now + TIMED_MS; }
     c.state = 1;
     streak++;  okCount++;  bestStreak = Math.max(bestStreak, streak);
     if (streak > S.rec) { S.rec = streak; saveSettings(); }
@@ -684,6 +792,7 @@ function submit(idx, kb) {
     if (okCount >= SN()) finishAt = now + 850;
   } else {
     badCount++;  curBad++;  streak = 0;
+    if (timed && tRun) { tEnd -= TIMED_PEN;  msg = "−2 s";  msgOk = false;  msgT = 0.9; }
     c.shake = 1;
     playWrong();
     buzz([35, 45, 35]);
@@ -702,6 +811,7 @@ if (d < w.rIn || d > w.rOut) return -1;
 const a = mod(Math.atan2(vy, vx) + Math.PI / 2 + seg / 2, Math.PI * 2);
 return Math.floor(a / seg) % 7;
 }
+let rstArm = 0;
 function act(id) {                                       // toda acción del usuario termina sincronizando el historial
   act0(id);
   syncHist();
@@ -712,9 +822,10 @@ function act0(id) {
   if (id === "kb_lo" || id === "kb_hi") { kbOct = clamp(kbOct + (id === "kb_lo" ? -1 : 1), 1, 8 - (L.kb ? L.kb.octs : 1));  dirty = true;  return; }
   if (id === "ml_retry") { loadMelList(true); return; }
   if (id.startsWith("mel_")) { openSong(int(id.slice(4), -1)); return; }
-  if (id === "mode_5") { melCat = melDirect || null;  go("melodies"); return; }
+  if (id === "mode_6") { timed = true;  startSession(false);  return; }
+  if (id === "mode_5") { timed = false;  melCat = melDirect || null;  go("melodies"); return; }
   if (id.startsWith("cat_")) { const c = melCats[int(id.slice(4), -1)];  if (c) { melCat = c.id;  scrollY = 0;  dirty = true; }  return; }
-  if (id.startsWith("mode_")) { S.mode = clamp(int(id.slice(5), 0), 0, 4); saveSettings(); startSession(false); return; }
+  if (id.startsWith("mode_")) { timed = false;  S.mode = clamp(int(id.slice(5), 0), 0, 4); saveSettings(); startSession(false); return; }
   if (id.startsWith("tf_")) { ST.clef = int(id.slice(3), -1); computeStats(); dirty = true; return; }
   if (id.startsWith("ln_")) { const p = id.split("_"), n = clamp(int(p[2], 0), 0, 4); if (p[1] === "1") S.lf = n; else S.lg = n; saveSettings(); layout(); pianoPreload(pianoMidis(S.mode)); dirty = true; return; }
   if (id.startsWith("acc_")) { S.accent = clamp(int(id.slice(4), 0), 0, ACCENTS.length - 1); applyAccent(); saveSettings(); dirty = true; return; }
@@ -726,13 +837,18 @@ function act0(id) {
     case "m_stats": ST.confirm = 0; computeStats(); go("stats"); return;
     case "back": if (scene === "game" || scene === "summary") go(playMode === 5 && mel ? "melodies" : "clefs"); else if (scene === "melodies") { if (melInCat()) { melCat = null;  scrollY = 0;  dirty = true; } else go("clefs"); } else go("menu"); return;
     case "g_menu": case "s_menu": go("menu"); return;
-    case "reset": if (scene === "game") startSession(); return;
+    case "reset":
+      if (scene !== "game") return;
+      if (okCount > 0 && !finishAt && !(rstArm > performance.now())) { rstArm = performance.now() + 2500; showToast("Toca de nuevo para reiniciar (perderás el progreso)", 2500); return; }
+      rstArm = 0; startSession(); return;
     case "s_review": if (sum) startSession(true, clefsOf(sum.rec.m)); return;
     case "t_review": if (SD) startSession(true, SD.clefs); return;
-    case "update": applyUpdate(); return;
+    case "update":
+      if (scene === "game" && okCount > 0 && !(rstArm > performance.now())) { rstArm = performance.now() + 3000; showToast("Perderás la partida: toca de nuevo para actualizar", 3000); return; }
+      applyUpdate(); return;
     case "upd_x": updDismissed = true; dirty = true; return;
     case "install": case "bk_exp": case "bk_imp": return;   // se lanza en el evento click (gesto del usuario)
-    case "s_again": go(playMode === 5 && mel ? "melodies" : "clefs"); return;
+    case "s_again": if (timed) { startSession(false); return; }  go(playMode === 5 && mel ? "melodies" : "clefs"); return;
     case "t_chart": ST.metric = (ST.metric + 1) % 3; dirty = true; return;
     case "t_clear":
       if (ST.confirm > performance.now()) { sessions = []; saveSessions(); ST.confirm = 0; computeStats(); }
@@ -746,6 +862,8 @@ function act0(id) {
     case "skin_1": S.skin = 1; applyAccent(); layout(); break;
     case "midi_on": S.midi = true; initMidi(); break;
     case "midi_off": S.midi = false; break;
+    case "lang_en":  S.lang = "en";  S.es = false;  applyLang();  break;
+    case "lang_es":  S.lang = "es";  S.es = true;   applyLang();  break;
     case "name_es":  S.es = true;  break;
     case "name_en":  S.es = false; break;
     case "sound_on": S.sound = true;  playNote(5, 0.4); break;
@@ -795,6 +913,11 @@ function update(dt) {
     moving = true;
   } else if (!drag) scrollV = 0;
   if (ST.confirm) { if (performance.now() > ST.confirm) ST.confirm = 0; moving = true; }
+  if (timed && scene === "game" && tRun && !tUp) {
+    if (pauseStart === null && tLeft() <= 0) { tUp = true;  finishAt = performance.now() + 400;  buzz(60); }
+    else moving = true;
+  }
+  if (toastEnd) { if (performance.now() > toastEnd) toastEnd = 0; moving = true; }
   if (scene === "clefs") {                          // despliegue suave de los paneles de líneas adicionales
     for (let c = 0; c < 4; c++) {
       const tg = lnOpen[c] ? 1 : 0, dd = tg - lnT[c];
@@ -822,7 +945,7 @@ const rows = [
 ];
 {
   const mi = midiAccess ? [...midiAccess.inputs.values()].filter((i) => i.state === "connected") : [];
-  const val = !navigator.requestMIDIAccess ? "No disponible en este navegador (usa Chrome o Edge)" : !S.midi ? "Deshabilitado" : midiErr ? "Habilitado · " + midiErr : mi.length ? "Habilitado · conectado (" + (mi[0].name || "teclado") + (mi.length > 1 ? " +" + (mi.length - 1) : "") + ")" + (midiLast ? " · última nota: " + midiLast : "") : "Habilitado · sin teclado conectado" + (midiLast ? " · última nota: " + midiLast : "");
+  const val = !navigator.requestMIDIAccess ? "No disponible en este navegador (usa Chrome o Edge)" : !S.midi ? "Deshabilitado" : midiErr ? "Habilitado · " + midiErr : mi.length ? "Habilitado · conectado (" + (mi[0].name || ti("teclado", "keyboard")) + (mi.length > 1 ? " +" + (mi.length - 1) : "") + ")" + (midiLast ? " · última nota: " + midiLast : "") : "Habilitado · sin teclado conectado" + (midiLast ? " · última nota: " + midiLast : "");
   rows.push({ k: "sw", label: "Teclado MIDI", value: val, on: S.midi, id: S.midi ? "midi_off" : "midi_on" });
 }
 rows.push({ k: "sw", label: "Práctica adaptativa", value: S.adapt ? "Más práctica en tus notas débiles" : "Notas totalmente al azar", on: S.adapt, id: S.adapt ? "adapt_off" : "adapt_on" });
@@ -838,6 +961,7 @@ rows.push({ k: "step", label: "Tamaño de las notas", value: SZ_NAME[S.nsize], m
 if (fsSupported()) rows.push({ k: "sw", label: "Pantalla completa", value: isFs() ? "Activada" : "Desactivada", on: isFs(), id: isFs() ? "fs_off" : "fs_on" });
 else rows.push({ k: "note", label: "iPhone: Compartir › Añadir a pantalla de inicio" });
 rows.push({ k: "hd", label: "Aplicación" });
+rows.push({ k: "tap", label: "Idioma / Language", value: S.lang === "en" ? "English" : "Español", id: S.lang === "en" ? "lang_es" : "lang_en" });
 {
   const standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
   if (standalone) rows.push({ k: "tap", label: "Instalar app", value: "Ya está instalada en este dispositivo", id: "noop" });
@@ -1133,7 +1257,7 @@ midiAccess.inputs.forEach((inp) => {
 inp.onmidimessage = onMidi;
 if (!seenMidi.has(inp.id)) {
 seenMidi.add(inp.id);
-msg = "MIDI: " + (inp.name || "teclado");  msgOk = true;  msgT = 2.5;  dirty = true;
+msg = "MIDI: " + (inp.name || ti("teclado", "keyboard"));  msgOk = true;  msgT = 2.5;  dirty = true;
 }
 });
 }
@@ -1170,6 +1294,7 @@ ctx.arcTo(x, y, x + w, y, r);
 ctx.closePath();
 }
 function text(t, x, y, size, col, align, weight, maxW) {
+t = tr(t);
 const fam = "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif";
 const wt = weight ? weight + " " : "";
 ctx.font = wt + size + "px " + fam;
@@ -1296,6 +1421,18 @@ ctx.globalAlpha = 1;
 }
 ctx.restore();
 }
+function drawToast() {
+  if (!toastEnd) return;
+  const fs = clamp(L.vh * 0.02, 12, 16), maxW = Math.min(L.cw - L.m * 2, 520);
+  const h = fs * 2.6, w = maxW, x = L.cx0 + (L.cw - w) / 2, y = L.top + L.barH + L.m * 3;
+  const a = Math.min(1, (toastEnd - performance.now()) / 300);
+  ctx.save();  ctx.globalAlpha = a;
+  ctx.shadowColor = AC.shadow;  ctx.shadowBlur = 12;
+  ctx.fillStyle = AC.accBg;  rr(x, y, w, h, 12);  ctx.fill();  ctx.shadowBlur = 0;
+  ctx.strokeStyle = toastBad ? AC.fail : AC.accV;  ctx.lineWidth = 1.2;  rr(x, y, w, h, 12);  ctx.stroke();
+  text(toastMsg, x + w / 2, y + h / 2, fs, AC.bannerTxt, "center", "", w - 20);
+  ctx.restore();
+}
 function drawMessage() {
 const my = L.msgY + L.msgH * 0.3, dk = true;
 if (settingsOpen) return;
@@ -1331,13 +1468,19 @@ ctx.beginPath();  ctx.arc(w.cx, w.cy, w.rIn - w.rOut * 0.03, 0, Math.PI * 2);  c
 function drawHeaderDark() {
 const fs = clamp(L.fs * 0.92, 11, 16), y = L.top + L.barH + L.fs * 1.15;
 const tot = okCount + badCount, pct = tot ? Math.floor((100 * okCount) / tot) : 100;
-const t = `Nota: ${Math.min(okCount + 1, SN())}/${SN()} | Fallos: ${badCount} | Precisión: ${pct}%`;
+let t = ti(`Nota: ${Math.min(okCount + 1, SN())}/${SN()} | Fallos: ${badCount} | Precisión: ${pct}%`, `Note: ${Math.min(okCount + 1, SN())}/${SN()} | Mistakes: ${badCount} | Accuracy: ${pct}%`);
+let frac = Math.min(okCount + 1, SN()) / SN(), barCol = AC.accV;
+if (timed) {                                                       // contrarreloj: tiempo restante · puntos · fallos; la barra se vacía y se pone roja en los últimos 10 s
+  const rem = tLeft(), sec = Math.ceil(rem / 1000);
+  t = ti(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} | Puntos: ${score} | Fallos: ${badCount}`, `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} | Points: ${score} | Mistakes: ${badCount}`);
+  frac = rem / TIMED_MS;  if (tRun && rem <= 10000) barCol = AC.fail;
+}
 const xL = L.cx0 + L.m * 0.5, x1 = L.cx0 + L.cw - L.m;            // texto a la izquierda · la barra termina con un pequeño margen respecto al borde derecho
 text(t, xL, y, fs, AC.hdTxt, "left");
-const bx = xL + ctx.measureText(t).width + 10, bw = x1 - bx;
+const bx = xL + ctx.measureText(tr(t)).width + 10, bw = x1 - bx;
 if (bw > 20) {
 ctx.fillStyle = AC.hdTrack;  ctx.fillRect(bx, y - 4, bw, 8);
-ctx.fillStyle = AC.accV;  ctx.fillRect(bx, y - 4, bw * Math.min(okCount + 1, SN()) / SN(), 8);      // el relleno usa el color de acento elegido
+ctx.fillStyle = barCol;  ctx.fillRect(bx, y - 4, bw * frac, 8);      // el relleno usa el color de acento elegido
 }
 }
 const DOT_EDGE = 0.67, DOT_LIGHT = 0.25;            // borde de acento al 67 % de opacidad (33 % transparente) · acierto/fallo aclarados un 25 %
@@ -1410,7 +1553,7 @@ function drawBar(title, o) {
     if (a.label) {
       const fsz = clamp(bh * 0.3, 14, 18);
       ctx.font = fsz + "px system-ui,sans-serif";
-      const w = Math.max(56, ctx.measureText(a.label).width + 24);
+      const w = Math.max(56, ctx.measureText(tr(a.label)).width + 24);
       addHit(a.id, rx - w, mid - 22, w, 44);
       text(a.label, rx - w / 2, mid, fsz, a.warn ? (lightBar ? "#8a1c1c" : "#ffd0d0") : (lightBar ? "#1b1b1b" : "#d8eef3"), "center", a.warn ? "bold" : "");
       rx -= w;
@@ -1539,7 +1682,7 @@ const MEL_MAXBPM = 90;      // tempo máximo de práctica (si la partitura va m�
 let mel = null, hold = null, melDone = false, melHoldMs = 0;
 let melList = null, melState = "idle", melErr = "", melBusy = -1;
 let melCats = [], melCat = null, melDirect = "";     // categorías, categoría abierta (null = pantalla de categorías) y atajo si solo hay una
-const SN = () => (playMode === 5 && mel ? mel.notes.length : SESSION_N);
+const SN = () => (playMode === 5 && mel ? mel.notes.length : timed ? TIMED_N : SESSION_N);
 const melSec = (beats) => (beats * 60) / mel.bpm;
 const melNeed = (n) => (S.melHold ? Math.max(0, MEL_HOLD * melSec(n.beats) - MEL_GRACE) : 0);
 
@@ -1678,7 +1821,7 @@ async function openSong(i) {
 
 /* ---------- partida de una melodía ---------- */
 function startMelody(song) {
-  mel = song;  playMode = 5;  reviewOn = false;  curKey = null;  reviewPool = [];  wmap = new Map();
+  timed = false;  mel = song;  playMode = 5;  reviewOn = false;  curKey = null;  reviewPool = [];  wmap = new Map();
   layout();
   pianoPreload(song.notes.map((n) => midi(n.step) + (n.alt || 0)));
   plan = song.notes.map(() => 0);
@@ -1841,7 +1984,7 @@ function drawMelodies() {
       let lines = [];
       if (c.desc) {                                          // la descripción se parte en 2 líneas si no cabe (mismo tamaño en todas)
         ctx.font = dfs + "px system-ui,sans-serif";
-        const words = c.desc.split(" ");  let cur = "";
+        const words = tr(c.desc).split(" ");  let cur = "";
         for (const wd of words) { const t = cur ? cur + " " + wd : wd;  if (ctx.measureText(t).width > avail && cur) { lines.push(cur);  cur = wd; } else cur = t; }
         if (cur) lines.push(cur);
         lines = lines.slice(0, 2);
@@ -2305,7 +2448,7 @@ function drawMenu() {
   bigButton("m_stats", cx - bw / 2, y1 + bh + gap, bw, bh, "Estadísticas");
   const fs = clamp(h * 0.022, 12, 17), label = "Versión " + APP_VER;
   ctx.font = fs + "px system-ui,sans-serif";
-  const bwid = ctx.measureText(label).width + 22, bhei = fs * 2;
+  const bwid = ctx.measureText(tr(label)).width + 22, bhei = fs * 2;
   const bx = L.cx0 + L.cw - L.m - bwid, by = L.bot - L.m - bhei;
   ctx.fillStyle = AC.badgeBg;  rr(bx, by, bwid, bhei, 4);  ctx.fill();
   ctx.strokeStyle = AC.accV;  ctx.lineWidth = 1.2;  ctx.stroke();
@@ -2320,7 +2463,7 @@ function clefCard(id, mode, x, y, w, h, top) {
   const s = h * 0.1, cy = y + h / 2, ix = x + h * 0.15, iw = h * 0.72, cl = mode === 1 || mode === 4 ? 1 : 0;
   for (let i = 0; i < 5; i++) line(ix, cy + (i - 2) * s, ix + iw, cy + (i - 2) * s, AC.stave, 1);
   const col = AC.glyph;
-  if (mode === 2) { glyph(G_CLEF, ix + s * 0.1, cy + s, col, 4 * s);  glyph(F_CLEF, ix + iw * 0.52, cy - s, col, 4 * s); }
+  if (mode === 2 || mode === 6) { glyph(G_CLEF, ix + s * 0.1, cy + s, col, 4 * s);  glyph(F_CLEF, ix + iw * 0.52, cy - s, col, 4 * s); }
   else if (cl === 0) glyph(G_CLEF, ix + s * 0.4, cy + s, col, 4 * s);
   else glyph(F_CLEF, ix + s * 0.4, cy - s, col, 4 * s);
   if (mode === 3 || mode === 4) {                    // armaduras: mini armadura del nivel actual junto a la clave (hasta 3 signos)
@@ -2328,7 +2471,7 @@ function clefCard(id, mode, x, y, w, h, top) {
     for (let i = 0; i < Math.min(kk.n, 3); i++) drawAcc(kk.type, ix + s * 3.5 + i * s * 1.1, cy - (kk.pos[i] - mid) * s * 0.5, s * 0.8, col);
   }
   const tx = ix + iw + h * 0.13;
-  const sub = ["Registro agudo", "Registro grave", "Intercaladas al azar", "Nivel " + (S.klv[0] + 1) + "/" + KEY_LEVELS.length + " · " + keyName(S.klv[0]), "Nivel " + (S.klv[1] + 1) + "/" + KEY_LEVELS.length + " · " + keyName(S.klv[1])][mode];
+  const sub = ["Registro agudo", "Registro grave", "Intercaladas al azar", "Nivel " + (S.klv[0] + 1) + "/" + KEY_LEVELS.length + " · " + keyName(S.klv[0]), "Nivel " + (S.klv[1] + 1) + "/" + KEY_LEVELS.length + " · " + keyName(S.klv[1]), "", S.trBest ? "60 s · Récord: " + S.trBest + " pts" : "60 s · Sin récord todavía"][mode];
   text(MODE_NAME[mode], tx, y + h * 0.38, clamp(h * 0.23, 15, 22), AC.txt, "left", "", x + w - tx - 40);
   text(mode === 5 ? "Toca canciones: mantén cada nota" : sub, tx, y + h * 0.68, clamp(h * 0.16, 12, 15), AC.dim, "left", "", x + w - tx - 40);
   ctx.strokeStyle = hov ? AC.accT : AC.chev;  ctx.lineWidth = 2;  ctx.lineCap = "round";
@@ -2404,8 +2547,9 @@ function drawClefs() {
   const ch = clamp(L.vh * 0.1, 54, 88), grp = 18;
   let y = top + L.m * 1.5 + 14 - scrollY;
   clipRect(0, top, L.vw, L.vh - top);
-  for (let m = 0; m < 6; m++) {
+  for (let m = 0; m < 7; m++) {
     if (m === 3) { text("ARMADURAS", x + 2, y + 6, 12, AC.dim, "left", "bold");  y += 24; }
+    if (m === 6) { text("DESAFÍO", x + 2, y + 6, 12, AC.dim, "left", "bold");  y += 24; }
     if (m === 5) { text("MELODÍAS", x + 2, y + 6, 12, AC.dim, "left", "bold");  y += 24; }
     const pi = m < 2 ? m : m >= 5 || m === 2 ? -1 : m - 1;                          // panel/botón de cada tarjeta (las mezcladas no tienen)
     if (pi >= 0) visHit("lnt_" + pi, x + w - 34, y - 20, 48, 48, top);   // se registra ANTES que la tarjeta para tener prioridad
@@ -2448,7 +2592,7 @@ function drawSummary() {
   clipRect(0, L.top + L.barH, L.vw, viewBot - L.top - L.barH);
   let y = L.top + L.barH + pad - scrollY;
   y += 6;
-  text((r.rv ? "Repaso de fallos" : (r.mt || MODE_NAME[r.m]) + (r.k !== undefined ? " · " + keyName(r.k) : "")) + " · " + (r.mt ? r.n.length : SESSION_N) + " notas", cx, y, fs, AC.dim, "center", "", w);
+  text(r.tm ? "Contrarreloj · " + r.n.length + " notas" : (r.rv ? "Repaso de fallos" : (r.mt || MODE_NAME[r.m]) + (r.k !== undefined ? " · " + keyName(r.k) : "")) + " · " + (r.mt ? r.n.length : SESSION_N) + " notas", cx, y, fs, AC.dim, "center", "", w);
   y += fs * 1.2 + pad;
   // anillo de precisión
   const R = clamp(w * 0.19, 54, 88), lw = R * 0.2, ry = y + R + lw / 2;
@@ -2460,7 +2604,10 @@ function drawSummary() {
   text(Math.round(A.acc * 100) + "%", cx, ry - R * 0.08, R * 0.5, AC.txt, "center", "bold", R * 1.5);
   text("precisión", cx, ry + R * 0.44, clamp(R * 0.2, 11, 15), AC.dim, "center");
   y = ry + R + lw / 2 + pad * 0.8;
-  if (P) {
+  if (sum.tm) {
+    const q = sum.tm;
+    text(q.isRec ? "¡Nuevo récord! " + q.score + " pts" : "Récord: " + q.prevBest + " pts · esta vez " + q.score + " pts", cx, y, fs, q.isRec ? AC.ok : AC.dim, "center", "bold", w);
+  } else if (P) {
     const d = Math.round((A.acc - P.acc) * 100);
     const t = d === 0 ? "= igual que la sesión anterior" : (d > 0 ? "▲ +" : "▼ ") + d + " pts vs. sesión anterior";
     text(t, cx, y, fs, d === 0 ? AC.dim : d > 0 ? AC.ok : AC.bad, "center");
@@ -2596,7 +2743,7 @@ function drawStats() {
   }
   const segH = clamp(w * 0.1, 38, 46), lblW = w * 0.2;
   text("Clave", x + 2, y + segH / 2, fs, AC.dim, "left");
-  seg(x + lblW, y, w - lblW, segH, ["Todas", "Sol", "Fa"], ST.clef + 1, "tf_", [-1, 0, 1]);
+  seg(x + lblW, y, w - lblW, segH, [ti("Todas", "All"), ti("Sol", "Treble"), ti("Fa", "Bass")], ST.clef + 1, "tf_", [-1, 0, 1]);
   y += segH + 10;
   text("Periodo", x + 2, y + segH / 2, fs, AC.dim, "left");
   seg(x + lblW, y, w - lblW, segH, ["7 días", "30 días", "Todo"], ST.period, "tp_", [0, 1, 2]);
@@ -2699,7 +2846,7 @@ sceneHits = [];
 if (settingsOpen) { drawSettings(); return; }
 if (scene === "game") {
 ctx.fillStyle = AC.bg;  ctx.fillRect(0, 0, L.vw, L.vh);
-drawBar(reviewOn ? "Repasar fallos" : playMode === 5 && mel ? mel.title : MODE_NAME[playMode], { back: "back", actions: [{ id: "reset", icon: "reset" }, { id: "open", icon: "gear" }] });
+drawBar(reviewOn ? "Repasar fallos" : playMode === 5 && mel ? mel.title : timed ? "Contrarreloj" : MODE_NAME[playMode], { back: "back", actions: [{ id: "reset", icon: "reset" }, { id: "open", icon: "gear" }] });
 drawHeaderDark();
 drawStaff();
 drawNotes();
@@ -2715,6 +2862,7 @@ else if (scene === "summary") drawSummary();
 else if (scene === "stats") drawStats();
 drawUpdateBanner();
 }
+drawToast();
 }
 let last = performance.now(), lastW = 0, lastH = 0;
 function frame(t) {
@@ -2750,7 +2898,7 @@ let booted = false;
 const boot = () => {
   if (booted) return;  booted = true;
   const t0 = performance.now(), sp = document.getElementById("splash"), fill = document.getElementById("splashFill"), msgEl = document.getElementById("splashMsg");
-  const setP = (p, t) => { if (fill) fill.style.width = Math.round(p * 100) + "%"; if (msgEl && t !== undefined) msgEl.textContent = t; };
+  const setP = (p, t) => { if (fill) fill.style.width = Math.round(p * 100) + "%"; if (msgEl && t !== undefined) msgEl.textContent = tr(t); };
   try {
     loadSettings();  if (fill) fill.style.background = AC.acc;
   } catch (e) {}          // la barra usa el color de acento elegido

@@ -1,8 +1,15 @@
-ReadNotes 1.5.21
+ReadNotes 1.5.23
 
 SUBIR: index.html, sw.js, manifest.webmanifest y la carpeta icons/ (sustituyen a los actuales). El resto no cambia.
 
 Novedades
+- INGLÉS: nuevo idioma English. Se elige en Ajustes ("Idioma / Language"); la primera vez se usa el idioma del dispositivo. En inglés las notas pasan a C, D, E… (se puede cambiar en Ajustes).
+  Todos los textos (menú, juego, estadísticas, ajustes, avisos, pantalla de carga) están traducidos; los plurales y las frases con números se ajustan solos.
+- MODO CONTRARRELOJ (apartado "Desafío"): 60 s, el reloj arranca con la primera nota acertada, cada fallo resta 2 s. Puntos por acierto y racha; se guarda el récord en el dispositivo
+  y la pantalla final avisa de "Nuevo récord". Cuenta atrás en la barra, que se pone roja en los últimos 10 s.
+- "Reiniciar" en mitad de una partida pide confirmación (toca de nuevo en 2,5 s); sin progreso reinicia directo.
+- Actualizar desde Ajustes durante una partida también pide confirmación. El aviso de nueva versión sigue sin salir en pleno juego.
+- Si el almacenamiento falla (lleno o bloqueado) se avisa con un mensaje; si falla guardar las sesiones se reintenta con las últimas 200.
 - Barra de progreso de la partida con el color de acento elegido en Ajustes.
 - Cabecera de la partida: el texto (Nota / Fallos / Precisión) va a la izquierda y la barra de progreso a la derecha, con un pequeño margen al borde.
 - Rendimiento al pasar de pantalla (sobre todo al pasar a jugar): la animación entre pantallas la hace ahora el navegador en la GPU (transform/opacity)
