@@ -203,6 +203,13 @@
       "categoria": "clasica"
     },
     {
+      "id": "waltzinaminorchopin",
+      "titulo": "Waltz in A Minor",
+      "autor": "Fréderic Chopin",
+      "archivo": "waltzinaminorchopin.mxl",
+      "categoria": "clasica"
+    },
+    {
       "id": "balladen1op23",
       "titulo": "Ballade No.1, Op. 23",
       "autor": "Fréderic Chopin",
