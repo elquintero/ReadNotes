@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.26", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.27", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías", "Contrarreloj"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -645,7 +645,7 @@ function pickStep(clef) {
 function makeNote(prev) {
   if (playMode === 5 && mel) {
     const gi = generated, m = mel.notes[generated++], t = prev ? prev.tslot + 1 : 0;
-    return { step: m.step, clef: 0, extra: 0, slot: t, tslot: t, state: 0, shake: 0, last: generated === mel.notes.length, acc: 0, beats: m.beats, alt: m.alt || 0, type: m.type, dots: m.dots, wb: m.wb, i: gi, bg: m.bg, tg: m.tg };
+    return { step: m.step, clef: 0, extra: 0, slot: t, tslot: t, state: 0, shake: 0, last: generated === mel.notes.length, acc: 0, beats: m.beats, alt: m.alt || 0, type: m.type, dots: m.dots, wb: m.wb, i: gi, bg: m.bg, tg: m.tg, rb: m.rb, ra: m.ra };
   }
   const clef = plan[generated++], s = pickStep(clef), isLast = generated === SN();
   lastKey = clef * 1000 + s;
@@ -808,7 +808,7 @@ function submit(idx, kb) {
     if (playMode !== 5) { playNote(c.step, 0.5, c.acc || 0);  buzz(12); }
     const nxt = notes.find((n) => n.state === 0);
     const ln2 = notes.find((n) => n.last);                          // doble barra final ya visible -> el pentagrama se queda quieto
-    const stay = !!ln2 && L.curX + ln2.tslot * L.gap + L.gap * 0.72 <= L.x1 - L.gap * 0.3;
+    const stay = !!ln2 && L.curX + ln2.tslot * L.gap + L.gap * (0.72 + (ln2.ra ? 0.55 * ln2.ra.length : 0)) <= L.x1 - L.gap * 0.3;
     const shift = stay ? 0 : nxt ? nxt.tslot : 1;
     for (const n of notes) n.tslot -= shift;
     if (generated < SN()) {
@@ -1443,13 +1443,14 @@ const cb = bottomStep(n.clef);
 glyph(n.clef === 0 ? G_CLEF : F_CLEF, x - 2.7 * L.sp, stepY(cb + (n.clef === 0 ? 2 : 6), n.clef), col, 2.2 * L.sp);
 }
 drawNote(n.step, x + shake, col, n.clef, n.beats ? n : null);
+if (n.rb || n.ra) drawNoteRests(n, x, col);
 if (n.state === 1 && n.bad > 0) text(nameOf(mod(n.step, 7)), x, p.y + L.sp * 0.7, clamp(L.sp * 1.05, 11, 20), AC.fail, "center");
 ctx.globalAlpha = 1;
 }
 drawBeams(cur);
 const ln = notes.find((n) => n.last);
 if (ln) {
-const bx = noteX(ln) + L.gap * 0.72, ba = clamp((bx - L.leftLimit) / (1.6 * L.sp), 0, 1);
+const bx = noteX(ln) + L.gap * (0.72 + (ln.ra ? 0.55 * ln.ra.length : 0)), ba = clamp((bx - L.leftLimit) / (1.6 * L.sp), 0, 1);
 if (ba > 0 && bx < p.x + p.w) {
 const dk = true, ink = AC.light ? "#2b2b2b" : "#9a9a9a", yb = L.bottomY, yt = L.bottomY - 4 * L.sp;
 const thin = Math.max(1.2, L.sp * (dk ? 0.07 : 0.11)), thick = Math.max(3, L.sp * 0.42);
@@ -1803,7 +1804,7 @@ function parseMusicXML(xml) {
     let sign = "";
     for (const c of part.getElementsByTagName("clef")) { const nn = c.getAttribute("number"); if (!nn || nn === "1") { sign = tx(c, "sign"); break; } }
     if (sign && sign !== "G") continue;                    // de momento solo clave de sol
-    let div = 1, voice = null, tsB = 4, tsT = 4, mi = -1, pend = false;
+    let div = 1, voice = null, tsB = 4, tsT = 4, mi = -1, pend = false, pendR = [];
     const okNote = (el) => { const st = tx(el, "staff"); return !(st && st !== "1") && !el.getElementsByTagName("grace").length; };
     scan: for (const meas of part.children) {                  // la voz de la melodía = la de la primera nota con altura del pentagrama 1
       if (meas.nodeName !== "measure") continue;
@@ -1828,7 +1829,14 @@ function parseMusicXML(xml) {
         if (el.nodeName !== "note" || !okNote(el)) continue;
         const v = tx(el, "voice") || "1";
         if (el.getElementsByTagName("rest").length) {
-          if (v === voice) { cur += (parseFloat(tx(el, "duration")) || 0) / div;  for (const t of el.getElementsByTagName("tuplet")) if (t.getAttribute("type") === "start") pend = true; }
+          if (v === voice) {
+            const rb = (parseFloat(tx(el, "duration")) || 0) / div, re = el.getElementsByTagName("rest")[0];
+            cur += rb;
+            for (const t of el.getElementsByTagName("tuplet")) if (t.getAttribute("type") === "start") pend = true;
+            const NM = { w: "whole", h: "half", q: "quarter", e: "eighth", s: "16th", t: "32nd" }, sh = shapeOf(rb);
+            const rt = re && re.getAttribute("measure") === "yes" ? "whole" : tx(el, "type") || NM[sh[1]];
+            if (rb > 0) pendR.push({ t: rt, d: el.getElementsByTagName("dot").length || (tx(el, "type") ? 0 : sh[2]) });           // silencio: se dibuja entre las notas
+          }
           continue;
         }
         const pe = el.getElementsByTagName("pitch")[0];
@@ -1852,9 +1860,10 @@ function parseMusicXML(xml) {
           continue;
         }
         const G = tsT === 8 && tsB % 3 === 0 ? 1.5 : Math.max(1, 4 / tsT);                                                              // negras por grupo de barra (compás compuesto: 1,5)
-        notes.push({ step, beats, alt, type: tx(el, "type"), dots: el.getElementsByTagName("dot").length, wb: tm ? beats * tm[0] / tm[1] : beats, tm, tupS, tupE, mi, pos, G });
+        notes.push({ step, beats, alt, type: tx(el, "type"), dots: el.getElementsByTagName("dot").length, wb: tm ? beats * tm[0] / tm[1] : beats, tm, tupS, tupE, mi, pos, G, rb: pendR.length ? pendR : null });  pendR = [];
       }
     }
+    if (notes.length && pendR.length) notes[notes.length - 1].ra = pendR;                                                            // silencios finales
     if (notes.length) { const bt = buildBeams(notes);  return { title: tx(doc, "work-title") || tx(doc, "movement-title"), bpm: bpm || 90, notes, bgs: bt.bgs, tgs: bt.tgs }; }
   }
   throw new Error("no se encontró ninguna voz en clave de sol");
@@ -2007,6 +2016,43 @@ function drawShaped(step, x, col, clef, n) {
   }
 }
 
+// Silencios dibujados con trazos (no dependen de la fuente). x = centro; se apoyan en la línea central del pentagrama.
+function drawRest(type, dots, x, col) {
+  const sp = L.sp, yM = stepY(bottomStep(0) + 4, 0);
+  ctx.save();
+  ctx.fillStyle = col;  ctx.strokeStyle = col;  ctx.lineCap = "round";  ctx.lineJoin = "round";
+  let dy = yM - sp * 0.5;
+  if (type === "whole" || type === "breve") { ctx.fillRect(x - sp * 0.65, yM - sp, sp * 1.3, sp * 0.5);  dy = yM - sp * 1.5; }       // cuelga de la 4ª línea
+  else if (type === "half") ctx.fillRect(x - sp * 0.65, yM - sp * 0.5, sp * 1.3, sp * 0.5);                                         // sobre la línea central
+  else if (type === "quarter") {
+    ctx.lineWidth = sp * 0.36;
+    ctx.beginPath();
+    ctx.moveTo(x - sp * 0.3, yM - sp * 1.45);  ctx.lineTo(x + sp * 0.3, yM - sp * 0.55);  ctx.lineTo(x - sp * 0.3, yM + sp * 0.3);
+    ctx.bezierCurveTo(x + sp * 0.55, yM + sp * 0.1, x + sp * 0.55, yM + sp * 1.2, x - sp * 0.05, yM + sp * 1.45);
+    ctx.stroke();
+  } else {                                                                                                                          // corchea, semicorchea...: plica inclinada con una bolita por corchete
+    const n = type === "eighth" ? 1 : type === "16th" ? 2 : 3, x0 = x + sp * 0.4, y0 = yM - sp * 0.9, x1 = x - sp * 0.35 - (n - 1) * sp * 0.3, y1 = yM + sp * 1.1 + (n - 1) * sp * 0.9;
+    const sx = (yy) => x0 + (x1 - x0) * (yy - y0) / (y1 - y0);
+    ctx.lineWidth = Math.max(1.3, sp * 0.14);
+    ctx.beginPath();  ctx.moveTo(x0, y0);  ctx.lineTo(x1, y1);  ctx.stroke();
+    for (let f = 0; f < n; f++) {
+      const py = yM - sp * 0.45 + f * sp * 0.9, px = sx(py) - sp * 0.85;
+      ctx.beginPath();  ctx.arc(px, py, sp * 0.27, 0, Math.PI * 2);  ctx.fill();
+      ctx.beginPath();  ctx.moveTo(px + sp * 0.1, py + sp * 0.2);  ctx.quadraticCurveTo(sx(py) - sp * 0.3, py + sp * 0.5, sx(py + sp * 0.55), py + sp * 0.55);  ctx.stroke();
+    }
+  }
+  for (let k = 0; k < dots; k++) { ctx.beginPath();  ctx.arc(x + sp * (1.0 + k * 0.5), dy, sp * 0.17, 0, Math.PI * 2);  ctx.fill(); }
+  ctx.restore();
+}
+function restAt(r, rx, col) {
+  const a = clamp((rx - L.leftLimit) / (1.6 * L.sp), 0, 1);
+  if (a <= 0 || rx > L.x1) return;
+  const prev = ctx.globalAlpha;  ctx.globalAlpha = a;  drawRest(r.t, r.d, rx, col);  ctx.globalAlpha = prev;
+}
+function drawNoteRests(n, x, col) {          // los silencios no ocupan turno: se reparten en el hueco anterior a la nota (los finales, tras ella)
+  if (n.rb) n.rb.forEach((r, k) => restAt(r, x - L.gap * (1 - (k + 1) / (n.rb.length + 1)), col));
+  if (n.ra) n.ra.forEach((r, k) => restAt(r, x + L.gap * 0.55 * (k + 1), col));
+}
 // Barras de unión y números de tresillo de las melodías. Las notas que ya salieron por la izquierda no están en `notes`: su posición se deduce de las vecinas.
 function drawBeams(cur) {
   if (playMode !== 5 || !mel || !mel.bgs) return;
