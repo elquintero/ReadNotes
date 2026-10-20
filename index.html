@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.25", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.26", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías", "Contrarreloj"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -644,8 +644,8 @@ function pickStep(clef) {
 }
 function makeNote(prev) {
   if (playMode === 5 && mel) {
-    const m = mel.notes[generated++], t = prev ? prev.tslot + 1 : 0;
-    return { step: m.step, clef: 0, extra: 0, slot: t, tslot: t, state: 0, shake: 0, last: generated === mel.notes.length, acc: 0, beats: m.beats, alt: m.alt || 0 };
+    const gi = generated, m = mel.notes[generated++], t = prev ? prev.tslot + 1 : 0;
+    return { step: m.step, clef: 0, extra: 0, slot: t, tslot: t, state: 0, shake: 0, last: generated === mel.notes.length, acc: 0, beats: m.beats, alt: m.alt || 0, type: m.type, dots: m.dots, wb: m.wb, i: gi, bg: m.bg, tg: m.tg };
   }
   const clef = plan[generated++], s = pickStep(clef), isLast = generated === SN();
   lastKey = clef * 1000 + s;
@@ -1446,6 +1446,7 @@ drawNote(n.step, x + shake, col, n.clef, n.beats ? n : null);
 if (n.state === 1 && n.bad > 0) text(nameOf(mod(n.step, 7)), x, p.y + L.sp * 0.7, clamp(L.sp * 1.05, 11, 20), AC.fail, "center");
 ctx.globalAlpha = 1;
 }
+drawBeams(cur);
 const ln = notes.find((n) => n.last);
 if (ln) {
 const bx = noteX(ln) + L.gap * 0.72, ba = clamp((bx - L.leftLimit) / (1.6 * L.sp), 0, 1);
@@ -1802,18 +1803,36 @@ function parseMusicXML(xml) {
     let sign = "";
     for (const c of part.getElementsByTagName("clef")) { const nn = c.getAttribute("number"); if (!nn || nn === "1") { sign = tx(c, "sign"); break; } }
     if (sign && sign !== "G") continue;                    // de momento solo clave de sol
-    let div = 1, voice = null;
+    let div = 1, voice = null, tsB = 4, tsT = 4, mi = -1, pend = false;
+    const okNote = (el) => { const st = tx(el, "staff"); return !(st && st !== "1") && !el.getElementsByTagName("grace").length; };
+    scan: for (const meas of part.children) {                  // la voz de la melodía = la de la primera nota con altura del pentagrama 1
+      if (meas.nodeName !== "measure") continue;
+      for (const el of meas.children) {
+        if (el.nodeName !== "note" || !okNote(el) || el.getElementsByTagName("rest").length) continue;
+        const pe = el.getElementsByTagName("pitch")[0];
+        if (!pe || STEP[tx(pe, "step")] === undefined) continue;
+        voice = tx(el, "voice") || "1";  break scan;
+      }
+    }
     const notes = [];
     for (const meas of part.children) {
       if (meas.nodeName !== "measure") continue;
+      mi++;
+      let cur = 0;                                            // posición dentro del compás, en negras (cuenta también los silencios)
       for (const el of meas.children) {
-        if (el.nodeName === "attributes") { const d = parseFloat(tx(el, "divisions")); if (d > 0) div = d; continue; }
-        if (el.nodeName !== "note" || el.getElementsByTagName("grace").length || el.getElementsByTagName("rest").length) continue;
-        const st = tx(el, "staff");
-        if (st && st !== "1") continue;
+        if (el.nodeName === "attributes") {
+          const d = parseFloat(tx(el, "divisions")); if (d > 0) div = d;
+          const tb = parseFloat(tx(el, "beats")), tt = parseFloat(tx(el, "beat-type")); if (tb > 0 && tt > 0) { tsB = tb;  tsT = tt; }
+          continue;
+        }
+        if (el.nodeName !== "note" || !okNote(el)) continue;
+        const v = tx(el, "voice") || "1";
+        if (el.getElementsByTagName("rest").length) {
+          if (v === voice) { cur += (parseFloat(tx(el, "duration")) || 0) / div;  for (const t of el.getElementsByTagName("tuplet")) if (t.getAttribute("type") === "start") pend = true; }
+          continue;
+        }
         const pe = el.getElementsByTagName("pitch")[0];
         if (!pe || STEP[tx(pe, "step")] === undefined) continue;
-        const v = tx(el, "voice") || "1";
         if (voice === null) voice = v;
         if (v !== voice) continue;
         const step = (parseInt(tx(pe, "octave"), 10) - 4) * 7 + STEP[tx(pe, "step")];
@@ -1821,13 +1840,22 @@ function parseMusicXML(xml) {
         const beats = (parseFloat(tx(el, "duration")) || div) / div;
         const last = notes[notes.length - 1];
         if (el.getElementsByTagName("chord").length) { if (last && step > last.step) { last.step = step; last.alt = alt; } continue; }   // acordes: la nota más aguda
+        const pos = cur;  cur += beats;
         let tieStop = false;
         for (const t of el.getElementsByTagName("tie")) if (t.getAttribute("type") === "stop") tieStop = true;
-        if (tieStop && last && last.step === step) { last.beats += beats; continue; }                                                   // ligadura: suma duración
-        notes.push({ step, beats, alt });
+        const tmE = el.getElementsByTagName("time-modification")[0];
+        const tm = tmE ? [parseFloat(tx(tmE, "actual-notes")) || 3, parseFloat(tx(tmE, "normal-notes")) || 2] : null;
+        let tupS = pend, tupE = false;  pend = false;
+        for (const t of el.getElementsByTagName("tuplet")) { const ty = t.getAttribute("type"); if (ty === "start") tupS = true; if (ty === "stop") tupE = true; }
+        if (tieStop && last && last.step === step) {                                                                                   // ligadura: suma duración (y deja de ser una figura simple)
+          last.beats += beats;  last.type = "";  last.dots = 0;  last.wb = last.tm ? last.beats * last.tm[0] / last.tm[1] : last.beats;  last.tupE = last.tupE || tupE;
+          continue;
+        }
+        const G = tsT === 8 && tsB % 3 === 0 ? 1.5 : Math.max(1, 4 / tsT);                                                              // negras por grupo de barra (compás compuesto: 1,5)
+        notes.push({ step, beats, alt, type: tx(el, "type"), dots: el.getElementsByTagName("dot").length, wb: tm ? beats * tm[0] / tm[1] : beats, tm, tupS, tupE, mi, pos, G });
       }
     }
-    if (notes.length) return { title: tx(doc, "work-title") || tx(doc, "movement-title"), bpm: bpm || 90, notes };
+    if (notes.length) { const bt = buildBeams(notes);  return { title: tx(doc, "work-title") || tx(doc, "movement-title"), bpm: bpm || 90, notes, bgs: bt.bgs, tgs: bt.tgs }; }
   }
   throw new Error("no se encontró ninguna voz en clave de sol");
 }
@@ -1911,11 +1939,45 @@ function shapeOf(b) {
   for (const s of SHAPES) { const e = Math.abs(s[0] - b); if (e < d) { d = e;  best = s; } }
   return best;
 }
+// figura escrita en la partitura (type + puntillos); si no viene, se deduce de la duración
+const TYPE_SH = { whole: [4, "w"], breve: [8, "w"], half: [2, "h"], quarter: [1, "q"], eighth: [0.5, "e"], "16th": [0.25, "s"], "32nd": [0.125, "t"], "64th": [0.125, "t"], "128th": [0.125, "t"] };
+function noteShape(n) {
+  const t = n.type && TYPE_SH[n.type];
+  if (t) return [t[0] * (n.dots ? 1.5 : 1), t[1], n.dots ? 1 : 0];
+  return shapeOf(n.wb || n.beats);
+}
+const FLAGS = { e: 1, s: 2, t: 3 };
+// Corcheas y figuras menores seguidas, dentro de un mismo pulso y sin silencios por medio, se unen con barras (los tresillos también).
+// También se agrupan los tresillos (y otros grupos irregulares) para dibujar su número.
+function buildBeams(notes) {
+  notes.forEach((n) => { n.fl = FLAGS[noteShape(n)[1]] || 0;  n.bg = -1;  n.tg = -1; });
+  const sameTm = (p, q) => (p.tm ? p.tm[0] + ":" + p.tm[1] : "") === (q.tm ? q.tm[0] + ":" + q.tm[1] : "");
+  const beat = (n) => Math.floor(n.pos / n.G + 1e-4);
+  const bgs = [];  let cur = null;
+  for (let k = 0; k < notes.length; k++) {
+    const n = notes[k], p = notes[k - 1];
+    if (cur && n.fl > 0 && p.fl > 0 && n.mi === p.mi && Math.abs(n.pos - (p.pos + p.beats)) < 1e-3 && beat(n) === beat(p) && sameTm(n, p)) { cur.b = k;  continue; }
+    if (cur && cur.b > cur.a) bgs.push(cur);
+    cur = n.fl > 0 ? { a: k, b: k } : null;
+  }
+  if (cur && cur.b > cur.a) bgs.push(cur);
+  bgs.forEach((g, gi) => { for (let k = g.a; k <= g.b; k++) notes[k].bg = gi; });
+  const tgs = [];  let tc = null;
+  for (let k = 0; k < notes.length; k++) {
+    const n = notes[k], p = notes[k - 1];
+    if (!n.tm) { tc = null;  continue; }
+    const gap = p && Math.abs(n.pos - (p.pos + p.beats)) > 1e-3 && n.mi === p.mi;
+    if (!tc || n.tupS || tc.cnt >= n.tm[0] || tc.sig !== n.tm[0] + ":" + n.tm[1] || tc.mi !== n.mi || gap) { tc = { a: k, b: k, n: n.tm[0], cnt: 0, sig: n.tm[0] + ":" + n.tm[1], mi: n.mi };  tgs.push(tc); }
+    tc.b = k;  tc.cnt++;  n.tg = tgs.length - 1;
+    if (n.tupE) tc = null;
+  }
+  return { bgs, tgs };
+}
 function drawShaped(step, x, col, clef, n) {
   const b = bottomStep(clef), sp = L.sp, lw = Math.max(1.2, sp * 0.1), y = stepY(step, clef);
   for (let s = b - 2; s >= step; s -= 2) { const ly = stepY(s, clef); line(x - sp, ly, x + sp, ly, col, lw); }
   for (let s = b + 10; s <= step; s += 2) { const ly = stepY(s, clef); line(x - sp, ly, x + sp, ly, col, lw); }
-  const sh = shapeOf(n.beats), t = sh[1], up = step < b + 4;
+  const sh = noteShape(n), t = sh[1], up = step < b + 4;
   if (n.alt) drawAcc(n.alt, x - 1.9 * sp, y, sp * 0.9, col);
   ctx.save();
   ctx.translate(x, y);  ctx.rotate(-0.38);
@@ -1925,7 +1987,7 @@ function drawShaped(step, x, col, clef, n) {
   else if (t === "h") { ctx.ellipse(0, 0, sp * 0.66, sp * 0.47, 0, 0, Math.PI * 2);  ctx.moveTo(sp * 0.4, 0);  ctx.ellipse(0, 0, sp * 0.42, sp * 0.2, 0.9, 0, Math.PI * 2);  ctx.fill("evenodd"); }
   else { ctx.ellipse(0, 0, sp * 0.65, sp * 0.47, 0, 0, Math.PI * 2);  ctx.fill(); }
   ctx.restore();
-  if (t !== "w") {                                    // plica y corchetes
+  if (t !== "w" && !(n.bg >= 0)) {                    // plica y corchetes (si la nota va en un grupo con barra, la plica la dibuja drawBeams)
     const sx = x + (up ? 1 : -1) * sp * 0.58, midY = stepY(b + 4, clef), ye = up ? Math.min(y - 3.4 * sp, midY) : Math.max(y + 3.4 * sp, midY);
     line(sx, y, sx, ye, col, Math.max(1.3, sp * 0.1));
     const fl = t === "e" ? 1 : t === "s" ? 2 : t === "t" ? 3 : 0;
@@ -1943,6 +2005,81 @@ function drawShaped(step, x, col, clef, n) {
     ctx.fillStyle = col;
     ctx.beginPath();  ctx.arc(x + sp * 1.15, dy, sp * 0.17, 0, Math.PI * 2);  ctx.fill();
   }
+}
+
+// Barras de unión y números de tresillo de las melodías. Las notas que ya salieron por la izquierda no están en `notes`: su posición se deduce de las vecinas.
+function drawBeams(cur) {
+  if (playMode !== 5 || !mel || !mel.bgs) return;
+  const byI = new Map();
+  for (const n of notes) if (n.i !== undefined) byI.set(n.i, n);
+  const sp = L.sp, lw = Math.max(1.3, sp * 0.1), thick = Math.max(2.4, sp * 0.42), gapB = sp * 0.62, b = bottomStep(0), midY = stepY(b + 4, 0);
+  const NOTE = AC.light ? "#111111" : "#c2c2c2";
+  const colOf = (n) => { if (!n) return NOTE; if (n.state === 1) return n.bad > 0 ? AC.fail : NOTE; if (n === cur && flashT > 0 && !flashOk) return C.bad; return NOTE; };
+  const member = (j, anchor) => {
+    const pn = byI.get(j), m = mel.notes[j], slot = pn ? pn.slot : anchor.slot + (j - anchor.i);
+    const x = L.curX + slot * L.gap + (pn && pn.shake ? Math.sin(performance.now() * 0.05) * 0.25 * sp * pn.shake : 0);
+    return { j, x, y: stepY(m.step, 0), step: m.step, fl: m.fl, a: clamp((x - L.leftLimit) / (1.6 * sp), 0, 1), col: colOf(pn) };
+  };
+  ctx.save();
+  const geo = new Map(), seen = new Set();
+  const poly = (x0, y0, x1, y1, h, col, al) => { ctx.globalAlpha = al;  ctx.fillStyle = col;  ctx.beginPath();  ctx.moveTo(x0, y0 - h / 2);  ctx.lineTo(x1, y1 - h / 2);  ctx.lineTo(x1, y1 + h / 2);  ctx.lineTo(x0, y0 + h / 2);  ctx.closePath();  ctx.fill(); };
+  for (const n of notes) {
+    if (n.bg < 0 || n.bg === undefined || seen.has(n.bg)) continue;
+    seen.add(n.bg);
+    const g = mel.bgs[n.bg], mem = [];
+    for (let j = g.a; j <= g.b; j++) mem.push(member(j, n));
+    let sum = 0, maxFl = 1;
+    for (const m of mem) { sum += m.step - (b + 4);  maxFl = Math.max(maxFl, m.fl); }
+    const up = sum < 0, dir = up ? 1 : -1, minLen = 3.0 * sp + (maxFl - 1) * gapB;
+    mem.forEach((m) => { m.sx = m.x + dir * sp * 0.58;  m.lim = up ? Math.min(m.y - minLen, midY) : Math.max(m.y + minLen, midY); });
+    const f = mem[0], l = mem[mem.length - 1];
+    const rise = clamp(l.lim - f.lim, -1.25 * sp, 1.25 * sp), slope = rise / (l.sx - f.sx);
+    let yb0 = (f.lim + l.lim) / 2 - rise / 2;
+    const yb = (xx) => yb0 + slope * (xx - f.sx);
+    let sh = 0;
+    for (const m of mem) sh = Math.max(sh, up ? yb(m.sx) - m.lim : m.lim - yb(m.sx));
+    yb0 += up ? -sh : sh;
+    geo.set(n.bg, { up, yb, mem, thick });
+    ctx.lineCap = "butt";
+    for (const m of mem) { ctx.globalAlpha = m.a;  line(m.sx, m.y, m.sx, yb(m.sx), m.col, lw); }                      // plicas
+    const off = (xx, lv) => yb(xx) + dir * (thick / 2 + lv * gapB);                                                    // la barra queda por dentro del extremo de la plica
+    for (let k = 0; k < mem.length - 1; k++) {
+      const p = mem[k], q = mem[k + 1], lv = Math.min(p.fl, q.fl), al = Math.min(p.a, q.a);
+      for (let v = 0; v < lv; v++) poly(p.sx - lw / 2, off(p.sx, v), q.sx + lw / 2, off(q.sx, v), thick, p.col, al);
+    }
+    for (let k = 0; k < mem.length; k++) {                                                                             // medias barras (semicorcheas junto a corcheas, etc.)
+      const m = mem[k], ln = k > 0 ? mem[k - 1].fl : 0, rn = k < mem.length - 1 ? mem[k + 1].fl : 0;
+      if (m.fl <= Math.max(ln, rn)) continue;
+      const toR = k === 0 || (k < mem.length - 1 && rn >= ln && k !== mem.length - 1), x2 = m.sx + (toR ? 1 : -1) * sp * 1.0;
+      for (let v = Math.max(ln, rn); v < m.fl; v++) poly(m.sx, off(m.sx, v), x2, off(x2, v), thick, m.col, m.a);
+    }
+  }
+  // números (y corchetes) de tresillo
+  const seenT = new Set();
+  ctx.textAlign = "center";  ctx.textBaseline = "middle";  ctx.font = "italic " + Math.round(sp * 1.35) + "px Georgia,'Times New Roman',serif";
+  for (const n of notes) {
+    if (n.tg < 0 || n.tg === undefined || seenT.has(n.tg)) continue;
+    seenT.add(n.tg);
+    const g = mel.tgs[n.tg], mem = [];
+    for (let j = g.a; j <= g.b; j++) mem.push(member(j, n));
+    const a = Math.max(...mem.map((m) => m.a));
+    if (a <= 0) continue;
+    const bgi = mel.notes[g.a].bg, one = bgi >= 0 && mem.every((m) => mel.notes[m.j].bg === bgi), col = mem[0].col;
+    ctx.globalAlpha = a;  ctx.fillStyle = col;
+    if (one && geo.has(bgi)) {                                                  // bajo la barra: solo el número, del lado de la barra
+      const G = geo.get(bgi), dir = G.up ? 1 : -1, xs = mem.map((m) => m.x + dir * sp * 0.58), xc = xs.reduce((s, v) => s + v, 0) / xs.length;
+      ctx.fillText(String(g.n), xc, G.yb(xc) - dir * sp * 0.95);
+    } else {                                                                    // sin barra: corchete con el número en medio
+      let sum = 0;  for (const m of mem) sum += m.step - (b + 4);
+      const up = sum < 0, dir = up ? -1 : 1;
+      const yl = up ? Math.min(...mem.map((m) => Math.min(m.y - 3.4 * sp, midY))) - 0.8 * sp : Math.max(...mem.map((m) => Math.max(m.y + 3.4 * sp, midY))) + 0.8 * sp;
+      const xl = mem[0].x - sp * 0.5, xr = mem[mem.length - 1].x + sp * 0.9, xc = (xl + xr) / 2, hk = 0.6 * sp, hw = sp * 0.9;
+      ctx.strokeStyle = col;  ctx.lineWidth = Math.max(1, sp * 0.08);
+      ctx.beginPath();  ctx.moveTo(xl, yl - dir * hk);  ctx.lineTo(xl, yl);  ctx.lineTo(xc - hw, yl);  ctx.moveTo(xc + hw, yl);  ctx.lineTo(xr, yl);  ctx.lineTo(xr, yl - dir * hk);  ctx.stroke();
+      ctx.fillText(String(g.n), xc, yl);
+    }
+  }
+  ctx.restore();
 }
 
 /* ---------- iconos de categoría (vectoriales, estilo línea) ---------- */
