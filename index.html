@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.33", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.34", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías", "Contrarreloj"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -324,7 +324,7 @@ b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0
 }
 const SZ = [0.8, 1, 1.25, 1.5], SZ_NAME = ["Pequeño", "Normal", "Grande", "Muy grande"];
 function noteGeometry() {
-const n = curKey ? 5 : 6, ks = curKey ? curKey.w : 0;     // la armadura ocupa sitio entre la clave y las notas
+const n = curKey ? 5 : 6, ks = curKey ? curKey.w : playMode === 5 && mel ? mel.ks || 0 : 0;     // la armadura ocupa sitio entre la clave y las notas
 const first = 9.4 + ks;
 const gap = 3.3;
 return { first, gap, ks, fit: first + (n - 1) * gap + 4 };
@@ -645,7 +645,7 @@ function pickStep(clef) {
 function makeNote(prev) {
   if (playMode === 5 && mel) {
     const gi = generated, m = mel.notes[generated++], ex = prev ? melEx(gi) : 0, t = prev ? prev.tslot + 1 + ex : 0;
-    return { step: m.step, clef: 0, extra: 0, slot: t, tslot: t, state: 0, shake: 0, last: generated === mel.notes.length, acc: 0, beats: m.beats, alt: m.alt || 0, type: m.type, dots: m.dots, wb: m.wb, i: gi, bg: m.bg, tg: m.tg, rb: m.rb, ra: m.ra, mi: m.mi, pm: m.pm, ex, pr: prev ? rightEdge(mel.notes[gi - 1]) : 0 };
+    return { step: m.step, clef: 0, extra: 0, slot: t, tslot: t, state: 0, shake: 0, last: generated === mel.notes.length, acc: 0, beats: m.beats, alt: m.alt || 0, type: m.type, dots: m.dots, wb: m.wb, i: gi, bg: m.bg, tg: m.tg, rb: m.rb, ra: m.ra, mi: m.mi, pm: m.pm, sg: m.sg, fx: m.fx, ex, pr: prev ? rightEdge(mel.notes[gi - 1]) : 0 };
   }
   const clef = plan[generated++], s = pickStep(clef), isLast = generated === SN();
   lastKey = clef * 1000 + s;
@@ -1369,15 +1369,24 @@ if (!d) line(L.x0, stepY(b + 8, clef), L.x0, stepY(b, clef), ink, lw * 1.4);
 if (clef === 0) glyph(G_CLEF, L.x0 + 0.45 * L.sp, stepY(b + 2, clef), cc);
 else glyph(F_CLEF, L.x0 + 0.45 * L.sp, stepY(b + 6, clef), cc);
 if (curKey) drawKeySig(clef, cc);
+else if (playMode === 5 && mel) {                    // melodías: la armadura de la nota actual (cambia sola si la pieza modula)
+  const c = currentNote(), nt = mel.notes[c && c.i !== undefined ? c.i : 0];
+  if (nt && nt.fx) drawKeySig(clef, cc, melKey(nt.fx, clef));
+}
 }
 // bemol / sostenido dibujados con trazos (no dependen de ninguna fuente). x = borde izquierdo, y = altura de la nota, u = tamaño de un espacio de pentagrama
 // Alteraciones de Bravura: el origen del glifo es la posición de la nota (x = borde izquierdo); tamaño de fuente = 4 u
-const ACC_GL = { flat: [0xE260, 0.904], sharp: [0xE262, 0.996] };
+const ACC_GL = { flat: [0xE260, 0.904], sharp: [0xE262, 0.996], natural: [0xE261, 0.672] };
 function drawAcc(type, x, y, u, col) {
-  const ag = type < 0 ? ACC_GL.flat : ACC_GL.sharp;
+  const ag = type < 0 ? ACC_GL.flat : type === 0 ? ACC_GL.natural : ACC_GL.sharp;
   if (fontHas(ag[0], ag[1])) { glyph(ag[0], x, y, col, 4 * u);  return; }
   ctx.save();  ctx.strokeStyle = col;  ctx.fillStyle = col;  ctx.lineCap = "butt";  ctx.lineJoin = "round";
-  if (type < 0) {                                  // bemol: plica y panza
+  if (type === 0) {                                // becuadro: dos verticales desplazadas y dos barras inclinadas
+    ctx.lineWidth = 0.1 * u;
+    ctx.beginPath();  ctx.moveTo(x + 0.08 * u, y - 1.35 * u);  ctx.lineTo(x + 0.08 * u, y + 0.5 * u);  ctx.moveTo(x + 0.58 * u, y - 0.5 * u);  ctx.lineTo(x + 0.58 * u, y + 1.35 * u);  ctx.stroke();
+    ctx.lineWidth = 0.22 * u;
+    ctx.beginPath();  ctx.moveTo(x + 0.08 * u, y - 0.42 * u);  ctx.lineTo(x + 0.58 * u, y - 0.62 * u);  ctx.moveTo(x + 0.08 * u, y + 0.62 * u);  ctx.lineTo(x + 0.58 * u, y + 0.42 * u);  ctx.stroke();
+  } else if (type < 0) {                                  // bemol: plica y panza
     ctx.lineWidth = 0.11 * u;
     ctx.beginPath();  ctx.moveTo(x + 0.06 * u, y - 1.75 * u);  ctx.lineTo(x + 0.06 * u, y + 0.5 * u);  ctx.stroke();
     ctx.lineWidth = 0.17 * u;
@@ -1396,8 +1405,9 @@ function drawAcc(type, x, y, u, col) {
   ctx.restore();
 }
 // armadura: los signos van justo detrás de la clave, cada uno en su línea/espacio
-function drawKeySig(clef, col) {
-  const u = L.sp, k = curKey, x0 = L.x0 + 3.45 * u, stepW = (k.type > 0 ? 1.15 : 1.0) * u;
+const melKey = (f, clef) => { const n = Math.min(7, Math.abs(f)), t = f > 0 ? 1 : -1;  return { n, type: t, pos: KS_POS[clef][t > 0 ? 0 : 1].slice(0, n) }; };
+function drawKeySig(clef, col, key) {
+  const u = L.sp, k = key || curKey, x0 = L.x0 + 3.45 * u, stepW = (k.type > 0 ? 1.15 : 1.0) * u;
   for (let i = 0; i < k.n; i++) drawAcc(k.type, x0 + i * stepW, stepY(k.pos[i], clef), u, col);
 }
 // nombre de nota seguido de su alteración (p. ej. "Si♭"): el signo se dibuja pequeño y elevado
@@ -1808,7 +1818,7 @@ function parseMusicXML(xml) {
     let sign = "";
     for (const c of part.getElementsByTagName("clef")) { const nn = c.getAttribute("number"); if (!nn || nn === "1") { sign = tx(c, "sign"); break; } }
     if (sign && sign !== "G") continue;                    // de momento solo clave de sol
-    let div = 1, voice = null, tsB = 4, tsT = 4, mi = -1, pend = false, pendR = [];
+    let div = 1, voice = null, tsB = 4, tsT = 4, mi = -1, pend = false, pendR = [], fifths = 0;
     const okNote = (el) => { const st = tx(el, "staff"); return !(st && st !== "1") && !el.getElementsByTagName("grace").length; };
     scan: for (const meas of part.children) {                  // la voz de la melodía = la de la primera nota con altura del pentagrama 1
       if (meas.nodeName !== "measure") continue;
@@ -1823,11 +1833,13 @@ function parseMusicXML(xml) {
     for (const meas of part.children) {
       if (meas.nodeName !== "measure") continue;
       mi++;
-      let cur = 0;                                            // posición dentro del compás, en negras (cuenta también los silencios)
+      let cur = 0;
+      const macc = {};                                        // alteraciones ya mostradas en este compás: letra_octava -> alteración                                            // posición dentro del compás, en negras (cuenta también los silencios)
       for (const el of meas.children) {
         if (el.nodeName === "attributes") {
           const d = parseFloat(tx(el, "divisions")); if (d > 0) div = d;
           const tb = parseFloat(tx(el, "beats")), tt = parseFloat(tx(el, "beat-type")); if (tb > 0 && tt > 0) { tsB = tb;  tsT = tt; }
+          const fe = el.getElementsByTagName("fifths")[0];  if (fe) fifths = clamp(parseInt(fe.textContent, 10) || 0, -7, 7);
           continue;
         }
         if (el.nodeName !== "note" || !okNote(el)) continue;
@@ -1863,12 +1875,20 @@ function parseMusicXML(xml) {
           last.beats += beats;  last.type = "";  last.dots = 0;  last.wb = last.tm ? last.beats * last.tm[0] / last.tm[1] : last.beats;  last.tupE = last.tupE || tupE;
           continue;
         }
+        const lt = STEP[tx(pe, "step")], kk = lt + "_" + tx(pe, "octave"), aV = parseFloat(tx(pe, "alter")) || 0;      // ¿hay que escribir el signo? solo si cambia lo que ya valía (armadura o alteración previa del compás)
+        const kAcc = fifths > 0 ? (SHARP_ORDER.indexOf(lt) < fifths ? 1 : 0) : fifths < 0 ? (FLAT_ORDER.indexOf(lt) < -fifths ? -1 : 0) : 0;
+        let sg;
+        if (aV !== (macc[kk] !== undefined ? macc[kk] : kAcc)) { sg = aV > 0 ? 1 : aV < 0 ? -1 : 0;  macc[kk] = aV; }       // 1 sostenido, -1 bemol, 0 becuadro
         const G = tsT === 8 && tsB % 3 === 0 ? 1.5 : Math.max(1, 4 / tsT);                                                              // negras por grupo de barra (compás compuesto: 1,5)
-        notes.push({ step, beats, alt, type: tx(el, "type"), dots: el.getElementsByTagName("dot").length, wb: tm ? beats * tm[0] / tm[1] : beats, tm, tupS, tupE, mi, pm: last ? last.mi : null, pos, G, rb: pendR.length ? packRests(pendR) : null });  pendR = [];
+        notes.push({ step, beats, alt, type: tx(el, "type"), dots: el.getElementsByTagName("dot").length, wb: tm ? beats * tm[0] / tm[1] : beats, tm, tupS, tupE, mi, pm: last ? last.mi : null, pos, G, sg, fx: fifths, rb: pendR.length ? packRests(pendR) : null });  pendR = [];
       }
     }
     if (notes.length && pendR.length) notes[notes.length - 1].ra = packRests(pendR);                                                            // silencios finales
-    if (notes.length) { const bt = buildBeams(notes);  return { title: tx(doc, "work-title") || tx(doc, "movement-title"), bpm: bpm || 90, notes, bgs: bt.bgs, tgs: bt.tgs }; }
+    if (notes.length) {
+      const bt = buildBeams(notes);
+      const ks = Math.max(...notes.map((n) => (n.fx ? Math.abs(n.fx) * (n.fx > 0 ? 1.15 : 1.0) + 0.55 : 0)));      // ancho de armadura que se reserva (la mayor de la pieza, para que las notas no salten al cambiar)
+      return { title: tx(doc, "work-title") || tx(doc, "movement-title"), bpm: bpm || 90, notes, bgs: bt.bgs, tgs: bt.tgs, ks };
+    }
   }
   throw new Error("no se encontró ninguna voz en clave de sol");
 }
@@ -2010,7 +2030,7 @@ function drawShaped(step, x, col, clef, n) {
   for (let s = b - 2; s >= step; s -= 2) { const ly = stepY(s, clef); line(x - sp, ly, x + sp, ly, col, lw); }
   for (let s = b + 10; s <= step; s += 2) { const ly = stepY(s, clef); line(x - sp, ly, x + sp, ly, col, lw); }
   const sh = noteShape(n), t = sh[1], up = step < b + 4;
-  if (n.alt) drawAcc(n.alt, x - 1.9 * sp, y, sp * 0.9, col);
+  if (n.sg !== undefined && n.sg !== null) drawAcc(n.sg, x - 1.9 * sp, y, sp * 0.9, col);        // solo si la armadura / el compás no lo cubren
   const hg = t === "w" ? HEAD_GL.w : t === "h" ? HEAD_GL.h : HEAD_GL.q;                          // cabeza de Bravura (redonda / blanca / negra)
   if (fontHas(hg[0], hg[1])) glyph(hg[0], x - hg[1] * sp / 2, y, col, 4 * sp);
   else {                                                                                       // reserva: cabeza dibujada
@@ -2126,7 +2146,7 @@ function itemAt(r, rx, col) {
 }
 // espacio mínimo (en espacios de pentagrama) entre una nota y la anterior: lo que sobresale por la derecha de la anterior (corchete, puntillo),
 // lo que se coloca en el hueco (silencios, barra) y lo que sobresale por la izquierda de la actual (alteración)
-const leftEdge = (m) => (m.alt ? 1.95 : 0.7);
+const leftEdge = (m) => (m.sg !== undefined && m.sg !== null ? 1.95 : 0.7);
 function rightEdge(m) {
   if (!m) return 0;
   let r = 0.8;
