@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.32", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.33", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías", "Contrarreloj"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -1371,7 +1371,11 @@ else glyph(F_CLEF, L.x0 + 0.45 * L.sp, stepY(b + 6, clef), cc);
 if (curKey) drawKeySig(clef, cc);
 }
 // bemol / sostenido dibujados con trazos (no dependen de ninguna fuente). x = borde izquierdo, y = altura de la nota, u = tamaño de un espacio de pentagrama
+// Alteraciones de Bravura: el origen del glifo es la posición de la nota (x = borde izquierdo); tamaño de fuente = 4 u
+const ACC_GL = { flat: [0xE260, 0.904], sharp: [0xE262, 0.996] };
 function drawAcc(type, x, y, u, col) {
+  const ag = type < 0 ? ACC_GL.flat : ACC_GL.sharp;
+  if (fontHas(ag[0], ag[1])) { glyph(ag[0], x, y, col, 4 * u);  return; }
   ctx.save();  ctx.strokeStyle = col;  ctx.fillStyle = col;  ctx.lineCap = "butt";  ctx.lineJoin = "round";
   if (type < 0) {                                  // bemol: plica y panza
     ctx.lineWidth = 0.11 * u;
@@ -2007,14 +2011,18 @@ function drawShaped(step, x, col, clef, n) {
   for (let s = b + 10; s <= step; s += 2) { const ly = stepY(s, clef); line(x - sp, ly, x + sp, ly, col, lw); }
   const sh = noteShape(n), t = sh[1], up = step < b + 4;
   if (n.alt) drawAcc(n.alt, x - 1.9 * sp, y, sp * 0.9, col);
-  ctx.save();
-  ctx.translate(x, y);  ctx.rotate(-0.38);
-  ctx.fillStyle = col;
-  ctx.beginPath();
-  if (t === "w") { ctx.ellipse(0, 0, sp * 0.74, sp * 0.5, 0, 0, Math.PI * 2);  ctx.moveTo(sp * 0.3, 0);  ctx.ellipse(0, 0, sp * 0.3, sp * 0.42, 0.95, 0, Math.PI * 2);  ctx.fill("evenodd"); }
-  else if (t === "h") { ctx.ellipse(0, 0, sp * 0.66, sp * 0.47, 0, 0, Math.PI * 2);  ctx.moveTo(sp * 0.4, 0);  ctx.ellipse(0, 0, sp * 0.42, sp * 0.2, 0.9, 0, Math.PI * 2);  ctx.fill("evenodd"); }
-  else { ctx.ellipse(0, 0, sp * 0.65, sp * 0.47, 0, 0, Math.PI * 2);  ctx.fill(); }
-  ctx.restore();
+  const hg = t === "w" ? HEAD_GL.w : t === "h" ? HEAD_GL.h : HEAD_GL.q;                          // cabeza de Bravura (redonda / blanca / negra)
+  if (fontHas(hg[0], hg[1])) glyph(hg[0], x - hg[1] * sp / 2, y, col, 4 * sp);
+  else {                                                                                       // reserva: cabeza dibujada
+    ctx.save();
+    ctx.translate(x, y);  ctx.rotate(-0.38);
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    if (t === "w") { ctx.ellipse(0, 0, sp * 0.74, sp * 0.5, 0, 0, Math.PI * 2);  ctx.moveTo(sp * 0.3, 0);  ctx.ellipse(0, 0, sp * 0.3, sp * 0.42, 0.95, 0, Math.PI * 2);  ctx.fill("evenodd"); }
+    else if (t === "h") { ctx.ellipse(0, 0, sp * 0.66, sp * 0.47, 0, 0, Math.PI * 2);  ctx.moveTo(sp * 0.4, 0);  ctx.ellipse(0, 0, sp * 0.42, sp * 0.2, 0.9, 0, Math.PI * 2);  ctx.fill("evenodd"); }
+    else { ctx.ellipse(0, 0, sp * 0.65, sp * 0.47, 0, 0, Math.PI * 2);  ctx.fill(); }
+    ctx.restore();
+  }
   if (t !== "w" && !(n.bg >= 0)) {                    // plica y corchetes (si la nota va en un grupo con barra, la plica la dibuja drawBeams)
     const fl = t === "e" ? 1 : t === "s" ? 2 : t === "t" ? 3 : 0, len = (3.4 + (fl > 1 ? (fl - 1) * 0.5 : 0)) * sp;       // con más corchetes, plica más larga
     const sx = x + (up ? 1 : -1) * sp * 0.58, midY = stepY(b + 4, clef), ye = up ? Math.min(y - len, midY) : Math.max(y + len, midY), slw = Math.max(1.3, sp * 0.1);
@@ -2039,6 +2047,7 @@ function drawShaped(step, x, col, clef, n) {
   }
 }
 
+const HEAD_GL = { w: [0xE0A2, 1.688], h: [0xE0A3, 1.18], q: [0xE0A4, 1.18] };      // cabezas de Bravura: [código, ancho]
 // Corchetes de Bravura (corchea, semicorchea, fusa) hacia arriba / hacia abajo: [código, ancho]
 const FLAG_GL = [[[0xE240, 1.056], [0xE242, 1.116], [0xE244, 1.044]], [[0xE241, 1.224], [0xE243, 1.164], [0xE245, 1.092]]];
 // Silencios con la fuente Bravura (SMuFL); si la fuente no cargó, se dibujan con trazos. x = centro del silencio.
@@ -2196,7 +2205,12 @@ function drawBeams(cur) {
   }
   // números (y corchetes) de tresillo
   const seenT = new Set();
-  ctx.textAlign = "center";  ctx.textBaseline = "middle";  ctx.font = "italic " + Math.round(sp * 1.35) + "px Georgia,'Times New Roman',serif";
+  const num = (v, xx, yy) => {                                     // dígitos de tresillo de Bravura (centrados en xx, yy); si faltan, cifra en cursiva
+    const cp = 0xE880 + v;
+    if (v >= 0 && v <= 9 && fontHas(cp, 1.2)) { const fs = 3.2 * sp;  glyph(cp, xx - 0.6 * fs / 4, yy + 0.75 * fs / 4, ctx.fillStyle, fs);  return; }
+    ctx.textAlign = "center";  ctx.textBaseline = "middle";  ctx.font = "italic " + Math.round(sp * 1.35) + "px Georgia,'Times New Roman',serif";
+    ctx.fillText(String(v), xx, yy);
+  };
   for (const n of notes) {
     if (n.tg < 0 || n.tg === undefined || seenT.has(n.tg)) continue;
     seenT.add(n.tg);
@@ -2207,7 +2221,7 @@ function drawBeams(cur) {
     if (one && geo.has(bgi)) {                                                  // bajo la barra: solo el número, del lado de la barra
       const G = geo.get(bgi), dir = G.up ? 1 : -1, xs = mem.map((m) => m.x + dir * sp * 0.58), xc = xs.reduce((s, v) => s + v, 0) / xs.length;
       const a = clamp((xc - L.leftLimit) / (1.6 * sp), 0, 1);
-      if (a > 0) { ctx.globalAlpha = a;  ctx.fillText(String(g.n), xc, G.yb(xc) - dir * sp * 0.95); }
+      if (a > 0) { ctx.globalAlpha = a;  num(g.n, xc, G.yb(xc) - dir * sp * 0.95); }
     } else {                                                                    // sin barra: corchete con el número en medio
       let sum = 0;  for (const m of mem) sum += m.step - (b + 4);
       const up = sum < 0, dir = up ? -1 : 1;
@@ -2217,7 +2231,7 @@ function drawBeams(cur) {
       if (a > 0) {
         ctx.globalAlpha = a;  ctx.strokeStyle = col;  ctx.lineWidth = Math.max(1, sp * 0.08);
         ctx.beginPath();  ctx.moveTo(xl, yl - dir * hk);  ctx.lineTo(xl, yl);  ctx.lineTo(xc - hw, yl);  ctx.moveTo(xc + hw, yl);  ctx.lineTo(xr, yl);  ctx.lineTo(xr, yl - dir * hk);  ctx.stroke();
-        ctx.fillText(String(g.n), xc, yl);
+        num(g.n, xc, yl);
       }
     }
   }
