@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.30", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.31", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías", "Contrarreloj"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -1897,7 +1897,7 @@ async function openSong(i) {
 
 /* ---------- partida de una melodía ---------- */
 function startMelody(song) {
-  timed = false;  mel = song;  playMode = 5;  reviewOn = false;  curKey = null;  reviewPool = [];  wmap = new Map();
+  melDyn = null;  timed = false;  mel = song;  playMode = 5;  reviewOn = false;  curKey = null;  reviewPool = [];  wmap = new Map();
   layout();
   pianoPreload(song.notes.map((n) => midi(n.step) + (n.alt || 0)));
   plan = song.notes.map(() => 0);
@@ -2038,7 +2038,7 @@ function drawShaped(step, x, col, clef, n) {
 // Silencios con la fuente Bravura (SMuFL); si la fuente no cargó, se dibujan con trazos. x = centro del silencio.
 // Posición SMuFL: la redonda cuelga de la 4ª línea, la blanca se apoya en la línea central y el resto se centra en ella.
 let FONT_OK = true;
-const REST_GL = { whole: [0xE4E3, 1.128], breve: [0xE4E3, 1.128], half: [0xE4E4, 1.128], quarter: [0xE4E5, 0.942], eighth: [0xE4E6, 0.92], "16th": [0xE4E7, 1.14], "32nd": [0xE4E8, 1.32] };
+const REST_GL = { whole: [0xE4E3, 1.128], breve: [0xE4E3, 1.128], half: [0xE4E4, 1.128], quarter: [0xE4E5, 1.08], eighth: [0xE4E6, 0.988], "16th": [0xE4E7, 1.28], "32nd": [0xE4E8, 1.452] };
 // ancho que ocupa cada elemento del hueco, en espacios de pentagrama (null = barra de compás)
 const restOk = {};
 function restFont(type) {                       // ¿tiene la fuente cargada este glifo? Si falta, el navegador usa otra fuente y el ancho no coincide con el esperado
@@ -3231,7 +3231,7 @@ function frame(t) {
 const dt = Math.min(0.05, (t - last) / 1000);
 last = t;
 if (innerWidth !== lastW || innerHeight !== lastH) { lastW = innerWidth;  lastH = innerHeight;  onResize(); }   // por si el sistema no avisó del cambio de tamaño
-const moving = update(dt);
+const moving = update(dt) | melVertical(dt);
 if (finishAt && performance.now() >= finishAt) { finishAt = 0; finishSession(); }
 buildUI();
 const hi = settingsOpen || scene !== "game" || L.kb ? -1 : wheelIndex(pointer);
@@ -3240,6 +3240,27 @@ for (const b of buttons) if (hit(b, pointer)) { hb = b.id; break; }
 if (hi !== hoverIdx || hb !== hoverBtn) { hoverIdx = hi; hoverBtn = hb; dirty = true; }
 if (moving || dirty || (trans && !trans.started)) { drawFrame(t); dirty = false; }
 requestAnimationFrame(frame);
+}
+// En melodías, el alto del papel se ajusta a las notas que se ven (no a toda la canción): así el pentagrama no baja
+// muchísimo por una nota aguda que aparecerá 100 notas después. El cambio se anima suavemente. Devuelve true mientras se mueve.
+let melDyn = null;
+function melVertical(dt) {
+  if (playMode !== 5 || !mel || !L || !L.paper || scene !== "game") return false;
+  const b = bottomStep(0), c = currentNote(), i0 = c && c.i !== undefined ? c.i : 0, nv = Math.ceil((L.x1 - L.curX) / L.gap) + 2;
+  let lo = b, hi = b + 8;
+  for (let k = Math.max(0, i0 - 1); k <= Math.min(mel.notes.length - 1, i0 + nv); k++) { const s = mel.notes[k].step;  if (s < lo) lo = s;  if (s > hi) hi = s; }
+  const tu = Math.max((hi - b) / 2, 4.9) + 1.0, td = Math.max((b - lo) / 2, 1.4) + 1.0;
+  let moving = false;
+  if (!melDyn) melDyn = { up: tu, down: td };
+  else {
+    const k = Math.min(1, dt * 9), du = tu - melDyn.up, dd = td - melDyn.down;
+    if (Math.abs(du) < 0.01 && Math.abs(dd) < 0.01) { melDyn.up = tu;  melDyn.down = td; }
+    else { melDyn.up += du * k;  melDyn.down += dd * k;  moving = true; }
+  }
+  const sp = L.sp, p = L.paper, h = (melDyn.up + melDyn.down) * sp;
+  if (Math.abs(p.h - h) > 0.01 || Math.abs(L.bottomY - (p.y + melDyn.up * sp)) > 0.01) moving = true;
+  p.h = h;  L.bottomY = p.y + melDyn.up * sp;  L.msgY = p.y + p.h + L.msgH / 2;
+  return moving;
 }
 function onResize() { if (trans) endTrans();  layout(); dirty = true; }
 addEventListener("resize", onResize);
