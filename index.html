@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.29", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.30", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías", "Contrarreloj"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -644,8 +644,8 @@ function pickStep(clef) {
 }
 function makeNote(prev) {
   if (playMode === 5 && mel) {
-    const gi = generated, m = mel.notes[generated++], ex = prev ? melEx(m) : 0, t = prev ? prev.tslot + 1 + ex : 0;
-    return { step: m.step, clef: 0, extra: 0, slot: t, tslot: t, state: 0, shake: 0, last: generated === mel.notes.length, acc: 0, beats: m.beats, alt: m.alt || 0, type: m.type, dots: m.dots, wb: m.wb, i: gi, bg: m.bg, tg: m.tg, rb: m.rb, ra: m.ra, mi: m.mi, pm: m.pm, ex };
+    const gi = generated, m = mel.notes[generated++], ex = prev ? melEx(gi) : 0, t = prev ? prev.tslot + 1 + ex : 0;
+    return { step: m.step, clef: 0, extra: 0, slot: t, tslot: t, state: 0, shake: 0, last: generated === mel.notes.length, acc: 0, beats: m.beats, alt: m.alt || 0, type: m.type, dots: m.dots, wb: m.wb, i: gi, bg: m.bg, tg: m.tg, rb: m.rb, ra: m.ra, mi: m.mi, pm: m.pm, ex, pr: prev ? rightEdge(mel.notes[gi - 1]) : 0 };
   }
   const clef = plan[generated++], s = pickStep(clef), isLast = generated === SN();
   lastKey = clef * 1000 + s;
@@ -2040,10 +2040,24 @@ function drawShaped(step, x, col, clef, n) {
 let FONT_OK = true;
 const REST_GL = { whole: [0xE4E3, 1.128], breve: [0xE4E3, 1.128], half: [0xE4E4, 1.128], quarter: [0xE4E5, 0.942], eighth: [0xE4E6, 0.92], "16th": [0xE4E7, 1.14], "32nd": [0xE4E8, 1.32] };
 // ancho que ocupa cada elemento del hueco, en espacios de pentagrama (null = barra de compás)
+const restOk = {};
+function restFont(type) {                       // ¿tiene la fuente cargada este glifo? Si falta, el navegador usa otra fuente y el ancho no coincide con el esperado
+  const g = REST_GL[type];
+  if (!FONT_OK || !g) return false;
+  const c = restOk[type], now = performance.now();
+  if (c && (c.v || now - c.t < 3000)) return c.v;
+  ctx.save();
+  ctx.font = "100px Bravura, serif";       const w1 = ctx.measureText(String.fromCodePoint(g[0])).width;
+  ctx.font = "100px Bravura, monospace";   const w2 = ctx.measureText(String.fromCodePoint(g[0])).width;
+  ctx.restore();
+  const exp = g[1] * 25, v = w1 > 0 && Math.abs(w1 - w2) < 0.5 && Math.abs(w1 - exp) < exp * 0.35;
+  restOk[type] = { v, t: now };
+  return v;
+}
 const itemW = (r) => (r ? ((REST_GL[r.t] || REST_GL.quarter)[1] + 0.3 + (r.d ? 0.7 : 0)) : 0.5);
 function drawRest(type, dots, x, col) {
   const sp = L.sp, yM = stepY(bottomStep(0) + 4, 0);
-  if (FONT_OK && REST_GL[type]) {
+  if (restFont(type)) {
     const g = REST_GL[type], whole = type === "whole" || type === "breve";
     glyph(g[0], x - g[1] * sp / 2, whole ? yM - sp : yM, col, 4 * sp);
     ctx.fillStyle = col;
@@ -2095,12 +2109,22 @@ function itemAt(r, rx, col) {
   else line(rx, L.bottomY - 4 * L.sp, rx, L.bottomY, AC.light ? "#2b2b2b" : "#9a9a9a", Math.max(1.2, L.sp * 0.09));       // barra de compás
   ctx.globalAlpha = prev;
 }
-// espacio mínimo (en espacios de pentagrama) entre una nota y la anterior: plica/corchete de la anterior + cabeza + alteración + lo que va en el hueco
-function noteNeed(m) {
-  if (m._nd === undefined) m._nd = 2.3 + (m.alt ? 1.4 : 0) + restItems(m).bef.reduce((t, r) => t + itemW(r), 0);
+// espacio mínimo (en espacios de pentagrama) entre una nota y la anterior: lo que sobresale por la derecha de la anterior (corchete, puntillo),
+// lo que se coloca en el hueco (silencios, barra) y lo que sobresale por la izquierda de la actual (alteración)
+const leftEdge = (m) => (m.alt ? 1.95 : 0.7);
+function rightEdge(m) {
+  if (!m) return 0;
+  let r = 0.8;
+  if (noteShape(m)[2]) r = 1.5;                                  // puntillo
+  if (m.fl > 0 && !(m.bg >= 0)) r = Math.max(r, 1.85);           // corchete suelto
+  return r;
+}
+function noteNeedAt(j) {
+  const m = mel.notes[j];
+  if (m._nd === undefined) { const bef = restItems(m).bef;  m._nd = rightEdge(mel.notes[j - 1]) + 0.3 + bef.reduce((t, r) => t + itemW(r), 0) + (bef.length ? 0.3 : 0) + leftEdge(m); }
   return m._nd;
 }
-const melEx = (m) => Math.max(0, noteNeed(m) * L.sp / L.gap - 1);        // fracción de hueco extra que se reserva antes de la nota
+const melEx = (j) => Math.max(0, noteNeedAt(j) * L.sp / L.gap - 1);      // fracción de hueco extra que se reserva antes de la nota
 function afterOff(n) {                                                    // distancia de la última nota a la doble barra final
   const aft = restItems(n).aft;
   return Math.max(L.gap * 0.72, aft.length ? (1.5 + aft.reduce((t, r) => t + itemW(r), 0) + 0.8) * L.sp : 0);
@@ -2108,7 +2132,7 @@ function afterOff(n) {                                                    // dis
 function drawNoteRests(n, x, col) {
   const sp = L.sp, { bef, aft } = restItems(n);
   if (bef.length) {
-    const W = bef.reduce((t, r) => t + itemW(r), 0) * sp, xl = x - L.gap * (1 + (n.ex || 0)) + 1.5 * sp, xr = x - 0.8 * sp - (n.alt ? 1.4 * sp : 0);
+    const W = bef.reduce((t, r) => t + itemW(r), 0) * sp, xl = x - L.gap * (1 + (n.ex || 0)) + ((n.pr || 0) + 0.15) * sp, xr = x - (leftEdge(n) + 0.15) * sp;
     let cx = xr - xl >= W ? xl + (xr - xl - W) / 2 : xr - W;        // si no cabe (p. ej. antes de la primera nota), se alinean a la derecha, hacia la clave
     for (const r of bef) { const w = itemW(r) * sp;  itemAt(r, cx + w / 2, col);  cx += w; }
   }
@@ -2126,7 +2150,7 @@ function drawBeams(cur) {
   const member = (j, anchor) => {
     const pn = byI.get(j), m = mel.notes[j];
     let slot = pn ? pn.slot : anchor.slot;
-    if (!pn) { if (j > anchor.i) for (let k = anchor.i + 1; k <= j; k++) slot += 1 + melEx(mel.notes[k]);  else for (let k = anchor.i; k > j; k--) slot -= 1 + melEx(mel.notes[k]); }
+    if (!pn) { if (j > anchor.i) for (let k = anchor.i + 1; k <= j; k++) slot += 1 + melEx(k);  else for (let k = anchor.i; k > j; k--) slot -= 1 + melEx(k); }
     const x = L.curX + slot * L.gap + (pn && pn.shake ? Math.sin(performance.now() * 0.05) * 0.25 * sp * pn.shake : 0);
     return { j, x, y: stepY(m.step, 0), step: m.step, fl: m.fl, a: clamp((x - L.leftLimit) / (1.6 * sp), 0, 1), col: colOf(pn) };
   };
