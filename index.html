@@ -65,7 +65,7 @@ const BOTTOM_SOL = 2, BOTTOM_FA = -10;
 const PENDING = 12;
 const MAX_W   = 1100;
 // ---------- constantes nuevas ----------
-const APP_NAME = "ReadNotes", APP_VER = "1.5.35", SESSION_N = 32, CLEF_GAP = 0.55;
+const APP_NAME = "ReadNotes", APP_VER = "1.5.36", SESSION_N = 32, CLEF_GAP = 0.55;
 const MODE_NAME = ["Clave de sol", "Clave de fa", "Claves mezcladas", "Armaduras clave de sol", "Armaduras clave de fa", "Melodías", "Contrarreloj"];
 const AC = {
   bg: "#212121", card: "#2a2a2a", edge: "#3c3c3c", txt: "#e2e2e2", dim: "#8d8d8d",
@@ -169,6 +169,7 @@ midi: false,
 skin: 0,
 accent: 0,
 klv: [0, 0],
+sigInline: false,
 adapt: true,
 rec: 0
 };
@@ -192,6 +193,7 @@ S.piano  = raw.piano !== false;
 S.vol    = clamp(int(raw.vol, 7), 0, 10);
 S.haptic = raw.haptic !== false;
 S.melHold = raw.melHold !== false;
+S.sigInline = raw.sigInline === true;
 S.goal = clamp(int(raw.goal, 64), 0, 5000);                // objetivo diario en notas (0 = desactivado)
 S.layoutP = raw.layoutP === 0 ? 0 : 1;          // 0 = círculo · 1 = teclado virtual (por defecto)
 S.layoutL = raw.layoutL === 0 ? 0 : 1;
@@ -230,7 +232,7 @@ const EN_EXACT = {"Ajustes":"Settings","aciertos seguidos":"correct in a row",
 "Verificación de octavas":"Octave check","Se comprueba la octava exacta de la nota":"The exact octave of the note is checked","Las notas introducidas pueden estar en cualquier octava":"Entered notes can be in any octave",
 "Objetivo diario":"Daily goal","Desactivado":"Off","Apariencia":"Appearance","Tema de la aplicación":"App theme","Oscuro":"Dark","Claro":"Light","Color de Acento":"Accent color",
 "Disposición de las notas":"Note layout","Teclado virtual (por defecto)":"On-screen keyboard (default)","Círculo de notas":"Note circle","Disposición de las notas (apaisado)":"Note layout (landscape)",
-"Tamaño de las notas":"Note size","Pantalla completa":"Fullscreen","Activada":"On","Desactivada":"Off","iPhone: Compartir › Añadir a pantalla de inicio":"iPhone: Share › Add to Home Screen",
+"Tamaño de las notas":"Note size","Pantalla completa":"Fullscreen","Cambios de armadura y compás":"Key and time signature changes","También se dibujan entre las notas":"Also drawn between the notes","Solo en la parte fija de la izquierda":"Only in the fixed area on the left","Activada":"On","Desactivada":"Off","iPhone: Compartir › Añadir a pantalla de inicio":"iPhone: Share › Add to Home Screen",
 "Aplicación":"App","Instalar app":"Install app","Ya está instalada en este dispositivo":"Already installed on this device","Añádela a tu pantalla de inicio o escritorio":"Add it to your home screen or desktop",
 "Safari: Compartir › Añadir a pantalla de inicio":"Safari: Share › Add to Home Screen","Menú del navegador › Instalar aplicación":"Browser menu › Install app",
 "Nueva versión disponible":"New version available","Toca para actualizar ahora":"Tap to update now","Actualizar":"Update",
@@ -645,7 +647,7 @@ function pickStep(clef) {
 function makeNote(prev) {
   if (playMode === 5 && mel) {
     const gi = generated, m = mel.notes[generated++], ex = prev ? melEx(gi) : 0, t = prev ? prev.tslot + 1 + ex : 0;
-    return { step: m.step, clef: 0, extra: 0, slot: t, tslot: t, state: 0, shake: 0, last: generated === mel.notes.length, acc: 0, beats: m.beats, alt: m.alt || 0, type: m.type, dots: m.dots, wb: m.wb, i: gi, bg: m.bg, tg: m.tg, rb: m.rb, ra: m.ra, mi: m.mi, pm: m.pm, sg: m.sg, fx: m.fx, tb: m.tb, tt: m.tt, ts: m.ts, ex, pr: prev ? rightEdge(mel.notes[gi - 1]) : 0 };
+    return { step: m.step, clef: 0, extra: 0, slot: t, tslot: t, state: 0, shake: 0, last: generated === mel.notes.length, acc: 0, beats: m.beats, alt: m.alt || 0, type: m.type, dots: m.dots, wb: m.wb, i: gi, bg: m.bg, tg: m.tg, rb: m.rb, ra: m.ra, mi: m.mi, pm: m.pm, sg: m.sg, fx: m.fx, tb: m.tb, tt: m.tt, ts: m.ts, kc: m.kc, tcg: m.tcg, pfx: m.pfx, ex, pr: prev ? rightEdge(mel.notes[gi - 1]) : 0 };
   }
   const clef = plan[generated++], s = pickStep(clef), isLast = generated === SN();
   lastKey = clef * 1000 + s;
@@ -911,6 +913,10 @@ function act0(id) {
     case "hap_off": S.haptic = false; break;
     case "mh_on":  S.melHold = true;  break;
     case "mh_off": S.melHold = false; break;
+    case "sigin_on": case "sigin_off":
+      S.sigInline = id === "sigin_on";  saveSettings();
+      if (mel) { mel.notes.forEach((m) => { delete m._ri;  delete m._nd; });  notes.forEach((n) => { delete n._ri; }); }       // el hueco de cada nota se recalcula
+      dirty = true;  return;
     case "goal_-": case "goal_+": {
       const G = [0, 32, 64, 96, 128, 192, 256, 384, 512], cur = G.reduce((b, v, i) => (Math.abs(v - S.goal) < Math.abs(G[b] - S.goal) ? i : b), 0);
       S.goal = G[clamp(cur + (id === "goal_+" ? 1 : -1), 0, G.length - 1)];
@@ -976,7 +982,8 @@ const rows = [
 { k: "step", label: "Volumen", value: S.vol + " / 10", minus: "vol_-", plus: "vol_+" },
 { k: "sw", label: "Piano real", value: pianoStatus(), on: S.piano, id: S.piano ? "piano_off" : "piano_on" },
 { k: "sw", label: "Vibraciones", value: S.haptic ? "Habilitado" : "Deshabilitado", on: S.haptic, id: S.haptic ? "hap_off" : "hap_on" },
-{ k: "sw", label: "Mantener notas en melodías", value: S.melHold ? "Mantén cada nota lo que dura" : "Un toque basta para avanzar", on: S.melHold, id: S.melHold ? "mh_off" : "mh_on" }
+{ k: "sw", label: "Mantener notas en melodías", value: S.melHold ? "Mantén cada nota lo que dura" : "Un toque basta para avanzar", on: S.melHold, id: S.melHold ? "mh_off" : "mh_on" },
+{ k: "sw", label: "Cambios de armadura y compás", value: S.sigInline ? "También se dibujan entre las notas" : "Solo en la parte fija de la izquierda", on: S.sigInline, id: S.sigInline ? "sigin_off" : "sigin_on" }
 ];
 {
   const mi = midiAccess ? [...midiAccess.inputs.values()].filter((i) => i.state === "connected") : [];
@@ -1410,8 +1417,8 @@ function drawAcc(type, x, y, u, col) {
 const TS_ADV = [1.88, 1.336, 1.784, 1.684, 1.88, 1.612, 1.736, 1.764, 1.744, 1.736];
 const tsNumW = (n) => String(n).split("").reduce((t, d) => t + TS_ADV[+d], 0);
 const tsBlockW = (n) => (n.ts === "common" || n.ts === "cut" ? 1.7 : Math.max(tsNumW(n.tb), tsNumW(n.tt)));
-function drawTimeSig(clef, col, nt) {
-  const u = L.sp, b = bottomStep(clef), x0 = L.x0 + (3.45 + (mel.kw || 0) + 0.35) * u;
+function drawTimeSig(clef, col, nt, xAt) {
+  const u = L.sp, b = bottomStep(clef), x0 = xAt !== undefined ? xAt : L.x0 + (3.45 + (mel.kw || 0) + 0.35) * u;
   if (nt.ts === "common" || nt.ts === "cut") {
     const cp = nt.ts === "common" ? 0xE08A : 0xE08B;
     if (fontHas(cp, 1.7)) { glyph(cp, x0, stepY(b + 4, clef), col, 4 * u);  return; }
@@ -1910,6 +1917,7 @@ function parseMusicXML(xml) {
     if (notes.length && pendR.length) notes[notes.length - 1].ra = packRests(pendR);                                                            // silencios finales
     if (notes.length) {
       const bt = buildBeams(notes);
+      notes.forEach((n, k) => { const p = notes[k - 1];  n.kc = !!p && n.fx !== p.fx;  n.tcg = !!p && !!n.tb && (n.tb !== p.tb || n.tt !== p.tt || n.ts !== p.ts);  n.pfx = p ? p.fx : 0; });
       const ks = Math.max(...notes.map((n) => (n.fx ? Math.abs(n.fx) * (n.fx > 0 ? 1.15 : 1.0) + 0.55 : 0)));      // ancho de armadura que se reserva (la mayor de la pieza, para que las notas no salten al cambiar)
       const tw = Math.max(...notes.map((n) => (n.tb ? tsBlockW(n) + 0.6 : 0)));                                     // ancho de la métrica que se reserva (la mayor de la pieza)
       return { title: tx(doc, "work-title") || tx(doc, "movement-title"), bpm: bpm || 90, notes, bgs: bt.bgs, tgs: bt.tgs, kw: ks, tw, ks: ks + tw };
@@ -2114,7 +2122,32 @@ function fontHas(cp, w) {                       // ¿tiene la fuente cargada est
   return v;
 }
 const restFont = (type) => !!REST_GL[type] && fontHas(REST_GL[type][0], REST_GL[type][1]);
-const itemW = (r) => (r ? ((REST_GL[r.t] || REST_GL.quarter)[1] + 0.3 + (r.d ? 0.7 : 0)) : 0.5);
+// Cambio de armadura y/o de compás dibujado entre las notas (como en una partitura impresa): becuadros que anulan los signos que sobran + armadura nueva + métrica nueva
+function sigItem(n) {
+  const r = { sig: true, kc: n.kc, tc: n.tcg, fx: n.fx, pfx: n.pfx, tb: n.tb, tt: n.tt, ts: n.ts, cf: 0, cn: 0 };
+  let w = 0;
+  if (n.kc) {
+    const pa = Math.abs(n.pfx), na = Math.abs(n.fx);
+    r.cf = n.pfx !== 0 && (Math.sign(n.pfx) !== Math.sign(n.fx) || na === 0) ? 0 : na;       // desde qué signo antiguo se anula
+    r.cn = n.pfx !== 0 && r.cf < pa ? pa - r.cf : 0;
+    w += r.cn * 0.95 + (r.cn && na ? 0.4 : 0) + na * (n.fx > 0 ? 1.15 : 1.0);
+  }
+  if (n.tcg) w += (w ? 0.3 : 0) + tsBlockW(n);
+  r.w = w + 0.5;
+  return r;
+}
+function drawSigItem(r, cx, col) {
+  const u = L.sp;
+  let x = cx - r.w * u / 2 + 0.25 * u;
+  if (r.kc) {
+    const op = KS_POS[0][r.pfx > 0 ? 0 : 1], np = KS_POS[0][r.fx > 0 ? 0 : 1];
+    for (let i = r.cf; i < r.cf + r.cn; i++) { drawAcc(0, x, stepY(op[i], 0), u, col);  x += 0.95 * u; }
+    if (r.cn && r.fx) x += 0.4 * u;
+    for (let i = 0; i < Math.abs(r.fx); i++) { drawAcc(r.fx > 0 ? 1 : -1, x, stepY(np[i], 0), u, col);  x += (r.fx > 0 ? 1.15 : 1.0) * u; }
+  }
+  if (r.tc) drawTimeSig(0, col, r, x + (r.kc ? 0.3 * u : 0));
+}
+const itemW = (r) => (r && r.sig ? r.w : r ? ((REST_GL[r.t] || REST_GL.quarter)[1] + 0.3 + (r.d ? 0.7 : 0)) : 0.5);
 function drawRest(type, dots, x, col) {
   const sp = L.sp, yM = stepY(bottomStep(0) + 4, 0);
   if (restFont(type)) {
@@ -2157,6 +2190,7 @@ function restItems(n) {
   let cm = n.pm !== null && n.pm !== undefined ? n.pm : (n.rb && n.rb[0] ? n.rb[0].mi : n.mi);
   for (const r of n.rb || []) { if (r.mi !== cm) { bef.push(null);  cm = r.mi; } bef.push(r); }
   if (n.mi !== cm) bef.push(null);
+  if (S.sigInline && (n.kc || n.tcg)) bef.push(sigItem(n));
   cm = n.mi;
   for (const r of n.ra || []) { if (r.mi !== cm) { aft.push(null);  cm = r.mi; } aft.push(r); }
   return (n._ri = { bef, aft });
@@ -2165,7 +2199,8 @@ function itemAt(r, rx, col) {
   const a = clamp((rx - L.leftLimit) / (1.6 * L.sp), 0, 1);
   if (a <= 0 || rx > L.x1) return;
   const prev = ctx.globalAlpha;  ctx.globalAlpha = a;
-  if (r) drawRest(r.t, r.d, rx, col);
+  if (r && r.sig) drawSigItem(r, rx, col);
+  else if (r) drawRest(r.t, r.d, rx, col);
   else line(rx, L.bottomY - 4 * L.sp, rx, L.bottomY, AC.light ? "#2b2b2b" : "#9a9a9a", Math.max(1.2, L.sp * 0.09));       // barra de compás
   ctx.globalAlpha = prev;
 }
